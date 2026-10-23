@@ -1,0 +1,103 @@
+rules_version = '2';
+// Shared projects: every visitor is signed in (anonymously or with an account).
+// Access is granted per member document with a role: owner, editor, commenter or viewer.
+// Members join through an invite token that the owner can revoke at any time.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function proj(pid) { return /databases/$(database)/documents/projects/$(pid); }
+    function memberDoc(pid) { return /databases/$(database)/documents/projects/$(pid)/members/$(request.auth.uid); }
+    function inviteDoc(pid, t) { return /databases/$(database)/documents/projects/$(pid)/invites/$(t); }
+    function roleOf(pid) { return signedIn() && exists(memberDoc(pid)) ? get(memberDoc(pid)).data.role : 'none'; }
+    function roleAfter(pid) { return signedIn() && existsAfter(memberDoc(pid)) ? getAfter(memberDoc(pid)).data.role : 'none'; }
+    function isMember(pid) { return roleOf(pid) != 'none'; }
+    function canEdit(pid) { return roleOf(pid) in ['owner', 'editor']; }
+    function canEditAfter(pid) { return roleAfter(pid) in ['owner', 'editor']; }
+    function canComment(pid) { return roleOf(pid) in ['owner', 'editor', 'commenter']; }
+    function isOwner(pid) { return signedIn() && get(proj(pid)).data.ownerUid == request.auth.uid; }
+    function isOwnerAfter(pid) { return signedIn() && getAfter(proj(pid)).data.ownerUid == request.auth.uid; }
+
+    // Personal cloud backups.
+    match /users/{uid}/{rest=**} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+
+    // Error reports: anyone signed in (including anonymous visitors) may add one; nobody can read them from the app.
+    match /errlogs/{id} {
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['kind', 'msg', 'stack', 'path', 'ua', 'v', 'ts', 'tab', 'mode', 'w', 'h', 'uid', 'expireAt'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.msg is string && request.resource.data.msg.size() <= 300
+        && request.resource.data.stack is string && request.resource.data.stack.size() <= 1800
+        && request.resource.data.ua is string && request.resource.data.ua.size() <= 200
+        && request.resource.data.path is string && request.resource.data.path.size() <= 200;
+      allow read, update, delete: if false;
+    }
+
+    match /projects/{pid} {
+      allow get: if isMember(pid);
+      allow list, delete: if false;
+      allow create: if signedIn() && pid.size() >= 20 && request.resource.data.ownerUid == request.auth.uid;
+      allow update: if (canEdit(pid) && request.resource.data.ownerUid == resource.data.ownerUid)
+                    || (canComment(pid) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastEdit', 'updatedAt']));
+
+      match /members/{uid} {
+        allow read: if isMember(pid);
+        allow create: if signedIn() && uid == request.auth.uid && (
+          (request.resource.data.role == 'owner' && isOwnerAfter(pid))
+          || (request.resource.data.role in ['editor', 'commenter', 'viewer']
+              && request.resource.data.token is string
+              && exists(inviteDoc(pid, request.resource.data.token))
+              && get(inviteDoc(pid, request.resource.data.token)).data.revoked == false
+              && get(inviteDoc(pid, request.resource.data.token)).data.role == request.resource.data.role));
+        allow update: if (isOwner(pid) && uid != request.auth.uid && request.resource.data.role in ['editor', 'commenter', 'viewer'])
+                      || (signedIn() && uid == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name']));
+        allow delete: if (isOwner(pid) && uid != request.auth.uid)
+                      || (signedIn() && uid == request.auth.uid && resource.data.role != 'owner');
+      }
+
+      match /invites/{token} {
+        allow get: if signedIn();
+        allow list, update: if isOwner(pid);
+        allow create: if isOwnerAfter(pid) && token.size() >= 16 && request.resource.data.role in ['editor', 'commenter', 'viewer'];
+        allow delete: if false;
+      }
+
+      match /sheets/{sid} {
+        allow read: if isMember(pid);
+        allow create: if canEditAfter(pid);
+        allow delete: if canEdit(pid);
+        allow update: if canEdit(pid)
+                      || (canComment(pid)
+                          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['c_comments', 'upd', 'order'])
+                          && request.resource.data.order.diff(resource.data.order).affectedKeys().hasOnly(['comments']));
+      }
+
+      match /versions/{vid} {
+        allow read: if isMember(pid);
+        allow write: if canEditAfter(pid);
+      }
+
+      match /renders/{rid} {
+        allow read: if isMember(pid);
+        allow write: if canEdit(pid);
+      }
+
+      match /renderData/{rid} {
+        allow read: if isMember(pid);
+        allow create, update: if canEdit(pid) && request.resource.data.d.size() < 1040000;
+        allow delete: if canEdit(pid);
+      }
+
+      match /images/{iid} {
+        allow read: if isMember(pid);
+        allow write: if canEdit(pid);
+      }
+
+      match /presence/{uid} {
+        allow read: if isMember(pid);
+        allow write: if signedIn() && uid == request.auth.uid && isMember(pid);
+      }
+    }
+  }
+}

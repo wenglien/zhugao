@@ -1,0 +1,16 @@
+{
+  "name": "築稿 室內設計工作台",
+  "short_name": "築稿",
+  "description": "畫平面、看 3D、出立面與估價單的室內設計工作台",
+  "lang": "zh-Hant",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F3F2EC",
+  "theme_color": "#2E4A37",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

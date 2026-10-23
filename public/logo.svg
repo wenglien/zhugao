@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 72" role="img" aria-label="築稿 空間與施工設計工具">
+  <g transform="translate(4 4)">
+    <rect width="64" height="64" rx="14" fill="#2E4A37"/>
+    <path d="M34 50V36.5A13.5 13.5 0 0 0 20.5 50Z" fill="#D9BC90"/>
+    <g fill="none" stroke="#F3F2EC" stroke-linejoin="miter">
+      <path d="M20.5 50H14V14H50V50H34" stroke-width="5"/>
+      <path d="M50 31H40" stroke-width="5"/>
+      <path d="M34 50V36" stroke-width="2.6"/>
+    </g>
+  </g>
+  <text x="84" y="43" font-family="'Noto Sans TC','PingFang TC','Microsoft JhengHei',sans-serif" font-size="34" font-weight="700" letter-spacing="2" fill="#23241F">築稿</text>
+  <text x="85" y="63" font-family="'Noto Sans TC','PingFang TC','Microsoft JhengHei',sans-serif" font-size="12.5" letter-spacing="1.5" fill="#6B6B62">空間與施工設計工具</text>
+</svg>
