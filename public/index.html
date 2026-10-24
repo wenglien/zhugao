@@ -402,7 +402,10 @@ button.tr:hover{background:#F6F6F1}
 /* ---------- background tracing ---------- */
 .pop{display:none;position:absolute;top:52px;z-index:16;background:var(--sheet);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow);padding:14px 16px;width:min(300px,calc(100% - 20px))}
 .pop.open{display:block}
-.bg-pop{right:10px}
+.bg-pop{right:10px;max-height:calc(100% - 70px);overflow-y:auto}
+.bg-pop hr{border:0;border-top:1px solid var(--line);margin:14px 0}
+.cad-layers{max-height:180px;overflow-y:auto;margin:6px 0 10px;border:1px solid var(--line);border-radius:8px;padding:4px 8px}
+.cad-layers .chk{display:flex;gap:6px;padding:3px 0;font-size:var(--t-xs)}.cad-layers small{margin-left:auto;color:var(--muted)}
 .pop h4{margin:0 0 4px;font-size:var(--t-md)}
 .pop p{margin:0 0 12px;font-size:var(--t-sm);color:var(--ink-2);line-height:1.6}
 .pop .row-btns .btn{flex:1}
@@ -795,6 +798,7 @@ button.tr:hover{background:#F6F6F1}
         <button data-exp="plan" role="menuitem">下載平面圖<small>PNG，含尺寸與標註</small></button>
           <button data-exp="pt" role="menuitem">照片級渲染圖<small>路徑追蹤，接近實拍的提案效果圖</small></button>
           <button data-exp="render" role="menuitem">下載 3D 預覽截圖<small>目前視角，PNG</small></button>
+          <button data-exp="dxf" role="menuitem">匯出 DXF（AutoCAD）<small>目前圖面，分圖層，可在 AutoCAD 另存成 DWG</small></button>
           <button data-exp="csv" role="menuitem">匯出物件清單<small>CSV，可用 Excel 開啟</small></button>
           <button data-exp="json" role="menuitem">儲存專案檔<small>JSON，可再次開啟編輯</small></button>
           <hr>
@@ -845,6 +849,7 @@ button.tr:hover{background:#F6F6F1}
         <div class="menu sheet-menu" id="sheetMenu" role="menu" aria-label="圖面"></div>
         <div class="pop bg-pop" id="bgPop" role="dialog" aria-label="底圖"></div>
         <input type="file" id="bgFile" accept="image/*" hidden>
+        <input type="file" id="dxfFile" accept=".dxf,application/dxf,image/vnd.dxf" hidden>
         <input type="file" id="boardFile" accept="image/*" hidden>
         <div class="canvas-box" id="canvasBox">
           <canvas id="plan" aria-label="可編輯的平面設計圖"></canvas>
@@ -953,6 +958,7 @@ button.tr:hover{background:#F6F6F1}
 <div class="cloud-ov" id="cloudOv" hidden><div><b>正在載入共用專案…</b><span>第一次開啟需要幾秒鐘</span></div></div>
 
 <script type="module">
+import { DxfWriter, parseDxf, decodeDxf, wallsFromSegs } from './lib/dxf.js';
 /* ============ helpers ============ */
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -1305,7 +1311,7 @@ function render(W, H, exporting) {
   C.setTransform(1, 0, 0, 1, 0, 0); C.fillStyle = COL.sheet; C.fillRect(0, 0, W, H);
   C.setTransform(DPR * VV.s, 0, 0, DPR * VV.s, DPR * VV.x, DPR * VV.y);
   const px = 1 / VV.s;
-  if (!exporting) drawBg();
+  if (!exporting) { drawBg(); drawCad(px); }
   if (L.grid && !exporting) drawGrid(W, H, px);
   drawRooms(px);
   if (L.lux) drawLux(px);
@@ -1755,6 +1761,7 @@ function snap(m, from, skip) {
   const tol = 12 / V.s; let best = null, bd = tol;
   for (const w of S.walls) { if (w === skip) continue; for (const [x, y] of [[w.x1, w.y1], [w.x2, w.y2]]) { const d = Math.hypot(m.x - x, m.y - y); if (d < bd) { bd = d; best = { x, y }; } } }
   if (best) return best;
+  { const cs = cadSnap(m, tol); if (cs) return cs; }
   let { x, y } = snapGrid(m);
   if (from && !altDown) { const dx = x - from.x, dy = y - from.y; if (Math.abs(dy) < Math.abs(dx) * .2) y = from.y; else if (Math.abs(dx) < Math.abs(dy) * .2) x = from.x; }
   return { x, y };
@@ -1845,7 +1852,7 @@ function renderOpts() {
   if (tool === 'text') h = pills([['plain', '一般文字'], ['note', '待確認標註']], opt.textStyle, 'textStyle') + pills([[130, '小'], [170, '中'], [260, '大']], opt.textSize, 'textSize');
   if (tool === 'furn') h = `<button class="pill lib-pill" data-o="lib" aria-expanded="${$('#lib').classList.contains('open')}">家具庫：<b>${LIB[opt.furn].name}</b></button><span class="cap">${LIB[opt.furn].w} × ${LIB[opt.furn].d} mm</span>`;
   if (tool === 'calib') h = draft && draft.b ? `<span class="cap">這兩點的實際距離</span><input class="calib-in" id="calibIn" type="number" inputmode="decimal" placeholder="例如 4600" aria-label="實際距離（mm）"><span class="cap">mm</span><button class="pill done" data-o="calibApply">套用比例</button><button class="pill" data-o="calibRedo">重新點選</button>` : `<span class="cap">${draft ? '再點第二個端點' : '點第一個端點'}</span><button class="pill" data-o="toSelect">取消</button>`;
-  if (tool === 'bgmove') h = '<span class="cap">拖曳底圖到正確位置</span><button class="pill done" data-o="toSelect">完成</button>';
+  if (tool === 'bgmove' || tool === 'cadmove') h = `<span class="cap">拖曳${tool === 'cadmove' ? ' CAD ' : ''}底圖到正確位置</span><button class="pill done" data-o="toSelect">完成</button>`;
   if (draft && (draft.kind === 'wall' || draft.kind === 'pipe' || (draft.kind === 'poly' && draft.pts.length >= 3))) h += `<button class="pill done" data-o="finish">${draft.kind === 'poly' ? '完成房間' : '完成'}</button>`;
   o.innerHTML = h;
 }
@@ -2195,6 +2202,11 @@ const down = {
     if (!draft || draft.kind !== 'calib' || draft.b) { draft = { kind: 'calib', a: { x: m.x, y: m.y } }; renderOpts(); draw(); return; }
     if (Math.hypot(m.x - draft.a.x, m.y - draft.a.y) * V.s < 6) return;
     draft.b = { x: m.x, y: m.y }; renderOpts(); draw(); $('#calibIn')?.focus(); setTimeout(() => $('#calibIn')?.focus(), 60);
+  },
+  cadmove(m, p) {
+    if (!S.cad) { setTool('select'); return; }
+    const o = { x: S.cad.x, y: S.cad.y }; let started = false;
+    act = { move(m2, p2) { if (!started) { if (Math.hypot(p2.x - p.x, p2.y - p.y) < slop()) return; started = true; commit(); } S.cad.x = Math.round(o.x + m2.x - m.x); S.cad.y = Math.round(o.y + m2.y - m.y); draw(); }, up() { if (started) changed(); } };
   },
   bgmove(m, p) {
     if (!S.bg) { setTool('select'); return; }
@@ -3050,6 +3062,110 @@ function cabMesh(it, B, mc, dark) {
   }
 }
 
+/* ============ CAD interchange (DXF) ============ */
+// Export follows common AIA-style layer names so the drawing drops straight into an office's CAD standards.
+const DXF_LAYERS = [['A-WALL', 7], ['A-DOOR', 3], ['A-GLAZ', 4], ['A-AREA', 8], ['A-AREA-IDEN', 2], ['A-FURN', 6], ['A-CASE', 30], ['A-STRS', 7], ['A-CLNG', 8], ['E-LITE', 2], ['E-POWR', 1], ['E-CIRC', 30], ['P-PIPE', 5], ['A-ANNO-DIMS', 140], ['A-ANNO-TEXT', 7], ['A-ANNO-NOTE', 1]];
+function exportDxf() {
+  const d = new DxfWriter(); DXF_LAYERS.forEach(([n, c]) => d.layer(n, c));
+  const wrap = v => ((v % (2 * Math.PI)) + 3 * Math.PI) % (2 * Math.PI) - Math.PI;
+  for (const w of S.walls) {
+    const t = w.t / 2;
+    if (w.arc) { const a = offsetPts(w, t), b = offsetPts(w, -t); d.poly('A-WALL', a); d.poly('A-WALL', b); d.line('A-WALL', a[0][0], a[0][1], b[0][0], b[0][1]); d.line('A-WALL', a.at(-1)[0], a.at(-1)[1], b.at(-1)[0], b.at(-1)[1]); continue; }
+    const Ln = Math.hypot(w.x2 - w.x1, w.y2 - w.y1); if (Ln < 1) continue;
+    const ux = (w.x2 - w.x1) / Ln, uy = (w.y2 - w.y1) / Ln, nx = -uy, ny = ux, P2 = (s, k) => [w.x1 + ux * s + nx * k, w.y1 + uy * s + ny * k];
+    const cuts = S.openings.filter(o => o.wallId === w.id).map(o => { const g = opGeom(o); return g ? [g.pos - o.w / 2, g.pos + o.w / 2] : null; }).filter(Boolean).sort((p, q) => p[0] - q[0]);
+    let s0 = 0; const spans = []; for (const [a, b] of cuts) { if (a > s0) spans.push([s0, a]); s0 = Math.max(s0, b); } if (s0 < Ln) spans.push([s0, Ln]);
+    spans.forEach(([a, b]) => d.poly('A-WALL', [P2(a, -t), P2(b, -t), P2(b, t), P2(a, t)], true));
+  }
+  for (const o of S.openings) {
+    const g = opGeom(o); if (!g) continue; const t = g.w.t / 2, hw = o.w / 2, A = k => [g.cx - g.ux * hw + g.nx * k, g.cy - g.uy * hw + g.ny * k], B = k => [g.cx + g.ux * hw + g.nx * k, g.cy + g.uy * hw + g.ny * k];
+    if (o.type === 'window') { for (const k of [-t, -t / 3, t / 3, t]) d.line('A-GLAZ', ...A(k), ...B(k)); d.line('A-GLAZ', ...A(-t), ...A(t)); d.line('A-GLAZ', ...B(-t), ...B(t)); continue; }
+    if (o.noLeaf) continue;
+    const p = doorPts(o, g); d.line('A-DOOR', p.Hx, p.Hy, p.Ex, p.Ey);
+    const a1 = Math.atan2(p.Ey - p.Hy, p.Ex - p.Hx), a2 = Math.atan2(p.Cy - p.Hy, p.Cx - p.Hx), dl = wrap(a2 - a1);
+    if (dl > 0) d.arc('A-DOOR', p.Hx, p.Hy, o.w, a1, a1 + dl); else d.arc('A-DOOR', p.Hx, p.Hy, o.w, a2, a2 - dl);
+  }
+  for (const r of S.rooms) {
+    d.poly('A-AREA', rpts(r), true); const [cx, cy] = roomCenter(r), a = roomArea(r);
+    d.text('A-AREA-IDEN', cx, cy - 120, 220, r.name, 0, 'center'); d.text('A-AREA-IDEN', cx, cy + 220, 140, `${a.toFixed(1)} m2  ${(a / 3.3058).toFixed(1)} 坪`, 0, 'center');
+    const c = ceilOf(r);
+    if (c.type === 'drop' && !r.pts) { const b = c.band; d.poly('A-CLNG', [[r.x + b, r.y + b], [r.x + r.w - b, r.y + b], [r.x + r.w - b, r.y + r.h - b], [r.x + b, r.y + r.h - b]], true, 'DASHED'); }
+    d.text('A-CLNG', cx, cy - 420, 120, c.type === 'open' ? '不做天花' : `CH ${c.h}`, 0, 'center');
+  }
+  for (const it of S.items) {
+    const a = it.rot * Math.PI / 180, c = Math.cos(a), s = Math.sin(a), R = (x, y) => [it.x + x * c - y * s, it.y + x * s + y * c], hw = it.w / 2, hd = it.d / 2;
+    const lay = it.kind === 'stair' ? 'A-STRS' : CAB_KINDS.includes(it.kind) ? 'A-CASE' : 'A-FURN';
+    d.poly(lay, [R(-hw, -hd), R(hw, -hd), R(hw, hd), R(-hw, hd)], true, it.kind === 'upper' ? 'DASHED' : undefined);
+    if (it.kind === 'upper') { d.line(lay, ...R(-hw, -hd), ...R(hw, hd), 'DASHED'); d.line(lay, ...R(hw, -hd), ...R(-hw, hd), 'DASHED'); }
+    if (it.kind === 'stair') { const g = stairGeo(it); for (let i = 1; i < (g.u ? g.n1 : g.n); i++) d.line(lay, ...R(-hw, hd - i * g.tread), ...R(g.u ? 0 : hw, hd - i * g.tread)); }
+    d.text('A-ANNO-TEXT', it.x, it.y, 110, `${it.code} ${it.name}`, 0, 'center');
+  }
+  for (const m of S.mep) {
+    const lay = m.kind === 'light' ? 'E-LITE' : m.kind === 'water' || m.kind === 'drain' ? 'P-PIPE' : 'E-POWR', r = m.kind === 'light' ? 110 : 80;
+    d.circle(lay, m.x, m.y, r); if (m.kind === 'light') { d.line(lay, m.x - r * .7, m.y - r * .7, m.x + r * .7, m.y + r * .7); d.line(lay, m.x + r * .7, m.y - r * .7, m.x - r * .7, m.y + r * .7); }
+    d.text(lay, m.x + r + 40, m.y - r, 100, m.code);
+  }
+  S.mep.filter(m => m.kind === 'switch').forEach(sw => ctlOf(sw).forEach(l => { const mx = (sw.x + l.x) / 2, my = (sw.y + l.y) / 2, dd = Math.hypot(l.x - sw.x, l.y - sw.y) || 1, k = Math.min(.25 * dd, 900), cx = mx - (l.y - sw.y) / dd * k, cy = my + (l.x - sw.x) / dd * k; d.poly('E-CIRC', Array.from({ length: 13 }, (_, i) => { const t = i / 12; return [(1 - t) ** 2 * sw.x + 2 * (1 - t) * t * cx + t * t * l.x, (1 - t) ** 2 * sw.y + 2 * (1 - t) * t * cy + t * t * l.y]; }), false, 'DASHED'); }));
+  for (const p of S.pipes) d.poly('P-PIPE', p.pts);
+  const dim = (x1, y1, x2, y2) => { const L = Math.hypot(x2 - x1, y2 - y1); if (L < 1) return; const ux = (x2 - x1) / L, uy = (y2 - y1) / L, nx = -uy, ny = ux; d.line('A-ANNO-DIMS', x1, y1, x2, y2); for (const [x, y] of [[x1, y1], [x2, y2]]) d.line('A-ANNO-DIMS', x - nx * 80, y - ny * 80, x + nx * 80, y + ny * 80); d.text('A-ANNO-DIMS', (x1 + x2) / 2 + nx * 60, (y1 + y2) / 2 + ny * 60, 120, fmt(L), Math.atan2(uy, ux), 'center'); };
+  S.dims.forEach(q => dim(q.x1, q.y1, q.x2, q.y2));
+  if (S.walls.length) { const b = bounds(); dim(b.x, b.y - 700, b.x + b.w, b.y - 700); dim(b.x - 700, b.y + b.h, b.x - 700, b.y); }
+  for (const t of S.texts) String(t.text).split('\n').forEach((ln, i) => d.text(t.style === 'note' ? 'A-ANNO-NOTE' : 'A-ANNO-TEXT', t.x, t.y + i * t.size * 1.3, t.size * .8, ln));
+  for (const m of S.marks) d.poly('A-ANNO-NOTE', m.pts);
+  download(URL.createObjectURL(new Blob([d.toString()], { type: 'application/dxf' })), `${P.code}-${S.no}-${S.title}.dxf`);
+  flash('已匯出 DXF，單位 mm');
+}
+/* CAD underlay: imported DXF linework sits under the plan like a tracing sheet, and wall corners snap to it */
+const cadCache = {};
+function cadData() {
+  const c = S.cad; if (!c || !IMGS[c.id]) return null; if (cadCache[c.id]) return cadCache[c.id];
+  try {
+    const j = JSON.parse(IMGS[c.id].slice(5)), grid = new Map(), cell = 600;
+    for (let i = 0; i < j.s.length; i += 5) for (const [x, y] of [[j.s[i], j.s[i + 1]], [j.s[i + 2], j.s[i + 3]]]) { const k = Math.floor(x / cell) + ',' + Math.floor(y / cell); if (!grid.has(k)) grid.set(k, []); grid.get(k).push(x, y); }
+    return (cadCache[c.id] = { ...j, grid, cell });
+  } catch (e) { return null; }
+}
+function cadSnap(m, tol) {
+  const c = S.cad, d = c?.show && cadData(); if (!d) return null; const lx = m.x - c.x, ly = m.y - c.y; let best = null, bd = tol;
+  for (let gx = Math.floor((lx - tol) / d.cell); gx <= Math.floor((lx + tol) / d.cell); gx++) for (let gy = Math.floor((ly - tol) / d.cell); gy <= Math.floor((ly + tol) / d.cell); gy++) {
+    const a = d.grid.get(gx + ',' + gy); if (!a) continue; for (let i = 0; i < a.length; i += 2) { const dd = Math.hypot(a[i] - lx, a[i + 1] - ly); if (dd < bd) { bd = dd; best = { x: Math.round(a[i] + c.x), y: Math.round(a[i + 1] + c.y) }; } }
+  }
+  return best;
+}
+function drawCad(px) {
+  const c = S.cad, d = c?.show && cadData(); if (!d) return; const off = new Set(c.off || []);
+  C.save(); C.translate(c.x, c.y); C.strokeStyle = 'rgba(70,96,140,.55)'; C.lineWidth = px; C.beginPath();
+  for (let i = 0; i < d.s.length; i += 5) { if (off.has(d.l[d.s[i + 4]])) continue; C.moveTo(d.s[i], d.s[i + 1]); C.lineTo(d.s[i + 2], d.s[i + 3]); }
+  C.stroke();
+  if (VV.s > .04) for (const [x, y, h, t, li] of d.t) { if (off.has(d.l[li]) || h * VV.s < 5) continue; C.fillStyle = 'rgba(70,96,140,.7)'; C.font = `${h}px "Noto Sans TC", sans-serif`; C.textBaseline = 'alphabetic'; C.fillText(t, x, y); }
+  C.restore();
+}
+async function importDxf(file) {
+  try {
+    const text = decodeDxf(await file.arrayBuffer()), r = parseDxf(text);
+    if (!r.segs.length) { alert('這個 DXF 沒有可以讀取的線條。請確認是平面圖，或在 AutoCAD 先把圖塊分解後再存成 DXF。'); return; }
+    const layers = Object.keys(r.layers), li = new Map(layers.map((l, i) => [l, i])), b = r.bounds;
+    const here = S.walls.length ? bounds() : { x: 0, y: 0, w: 0, h: 0 }, ox = Math.round(here.x - b.x), oy = Math.round(here.y - b.y);
+    const s = []; for (const q of r.segs) s.push(Math.round(q[0]), Math.round(q[1]), Math.round(q[2]), Math.round(q[3]), li.get(q[4]));
+    const t = r.texts.slice(0, 2000).map(q => [Math.round(q[0]), Math.round(q[1]), Math.round(q[2]), q[3], li.get(q[4]) ?? 0]);
+    let data = 'cad1:' + JSON.stringify({ s, t, l: layers });
+    if (data.length > 1040000) { flash('DXF 很大，只保留牆與門窗附近的圖層會比較順'); }
+    commit(); const id = uid(); IMGS[id] = data; saveImgs();
+    S.cad = { id, name: file.name.replace(/\.dxf$/i, ''), x: ox, y: oy, show: true, off: layers.filter(l => /dim|尺寸|標註|hatch|填充/i.test(l)) };
+    changed(); fit();
+    flash(`已匯入 ${fmt(r.segs.length)} 條線、${layers.length} 個圖層${r.truncated ? '（線條太多，只讀取前 60,000 條）' : ''}，單位 ${{ 1: '英吋', 4: 'mm', 5: 'cm', 6: 'm' }[r.units] || 'mm'}`);
+    $('#bgPop').classList.add('open'); renderBgPop();
+  } catch (err) { console.error(err); alert('無法讀取這個 DXF 檔。請在 AutoCAD 用「另存新檔 → DXF」重新輸出後再試。'); }
+}
+function cadToWalls() {
+  const c = S.cad, d = cadData(); if (!d) return; const off = new Set(c.off || []), segs = [];
+  for (let i = 0; i < d.s.length; i += 5) if (!off.has(d.l[d.s[i + 4]])) segs.push([d.s[i] + c.x, d.s[i + 1] + c.y, d.s[i + 2] + c.x, d.s[i + 3] + c.y]);
+  const ws = wallsFromSegs(segs); if (!ws.length) { flash('沒有找到成對的牆線。請只勾選牆的圖層再試一次'); return; }
+  commit(); let n = 0;
+  for (const w of ws) { const a = [Math.round(w.x1), Math.round(w.y1)], b = [Math.round(w.x2), Math.round(w.y2)]; if (S.walls.some(x => sameSeg(x, a, b))) continue; S.walls.push({ id: uid(), x1: a[0], y1: a[1], x2: b[0], y2: b[1], t: clamp(w.t, 60, 400), h: 2800 }); n++; }
+  changed(); flash(`已從 CAD 線條建立 ${n} 面牆，牆角接合處請再檢查`);
+}
+
 /* ============ lighting ============ */
 const LS = .01; // three.js light units per candela, so exposure stays in a comfortable range
 const fxOf = m => FX[m.fx] || FX.down;
@@ -3514,7 +3630,7 @@ $('#exportBtn').addEventListener('click', e => { e.stopPropagation(); const m = 
 document.addEventListener('click', e => { if (!e.target.closest('.menu-wrap')) { $('#exportMenu').classList.remove('open'); $('#exportBtn').setAttribute('aria-expanded', 'false'); } });
 $('#exportMenu').addEventListener('click', e => {
   const b = e.target.closest('[data-exp]'); if (!b) return; $('#exportMenu').classList.remove('open'); const k = b.dataset.exp;
-  if (k === 'plan') exportPlan(); if (k === 'render') exportRender(); if (k === 'csv') exportCSV();
+  if (k === 'plan') exportPlan(); if (k === 'render') exportRender(); if (k === 'csv') exportCSV(); if (k === 'dxf') exportDxf();
   if (k === 'json') download(URL.createObjectURL(new Blob([JSON.stringify({ project: P, versions: VERS, images: IMGS }, null, 1)], { type: 'application/json' })), `${P.code}-${P.name}.json`);
   if (k === 'open' || k === 'scan') $('#fileIn').click();
   if (k === 'pdf') openPdfDlg();
@@ -3564,12 +3680,20 @@ async function importBg(file) {
 }
 function renderBgPop() {
   const b = S.bg, el = $('#bgPop');
-  if (!b) { el.innerHTML = `<h4>匯入底圖</h4><p>把建商平面圖、丈量草圖或照片放在圖面下方，校正比例後就能照著描牆。</p><div class="row-btns"><button class="btn btn-primary" data-bg="pick">選擇圖片</button></div>`; return; }
+  if (!b) { el.innerHTML = `<h4>匯入底圖</h4><p>把建商平面圖、丈量草圖或照片放在圖面下方，校正比例後就能照著描牆。</p><div class="row-btns"><button class="btn btn-primary" data-bg="pick">選擇圖片</button></div>` + cadPopHtml(); return; }
   el.innerHTML = `<h4>底圖</h4><p>${b.cal ? `比例已校正，圖上 1 像素約 ${b.s.toFixed(1)} mm。` : '還沒校正比例，照著描出的尺寸可能不準。'}</p>
     <label class="chk" style="padding:0;margin-bottom:4px"><input type="checkbox" data-bg="show" ${b.show ? 'checked' : ''}>顯示底圖</label>
     <div class="range"><span>濃淡</span><input type="range" min="10" max="100" step="5" value="${Math.round(b.op * 100)}" data-bg="op" aria-label="底圖濃淡"><span id="bgOpV">${Math.round(b.op * 100)}%</span></div>
     <div class="row-btns"><button class="btn ${b.cal ? '' : 'btn-primary'}" data-bg="calib">校正比例</button><button class="btn" data-bg="move">移動底圖</button></div>
-    <div class="row-btns" style="margin-top:8px"><button class="btn" data-bg="pick">更換圖片</button><button class="btn danger" data-bg="remove">移除底圖</button></div>`;
+    <div class="row-btns" style="margin-top:8px"><button class="btn" data-bg="pick">更換圖片</button><button class="btn danger" data-bg="remove">移除底圖</button></div>` + cadPopHtml();
+}
+function cadPopHtml() {
+  const c = S.cad, d = c && cadData();
+  if (!c || !d) return `<hr><h4>CAD 底圖（DXF）</h4><p>匯入建築師或建商給的 DXF，牆角會自動吸附到 CAD 線條，也能把牆線轉成牆體。DWG 請先在 AutoCAD 另存成 DXF。</p><div class="row-btns"><button class="btn" data-bg="dxf">匯入 DXF</button></div>`;
+  const cnt = {}; for (let i = 4; i < d.s.length; i += 5) cnt[d.l[d.s[i]]] = (cnt[d.l[d.s[i]]] || 0) + 1; const off = new Set(c.off || []);
+  return `<hr><h4>CAD 底圖：${esc(c.name)}</h4><label class="chk" style="padding:0"><input type="checkbox" data-bg="cadshow" ${c.show ? 'checked' : ''}>顯示 CAD 底圖</label>
+    <div class="cad-layers">${d.l.map((l, i) => `<label class="chk"><input type="checkbox" data-cadl="${esc(l)}" ${off.has(l) ? '' : 'checked'}>${esc(l)}<small>${cnt[l] || 0}</small></label>`).join('')}</div>
+    <div class="row-btns"><button class="btn" data-bg="cadwalls" title="把勾選圖層中成對的平行線變成牆">勾選圖層轉成牆</button><button class="btn" data-bg="cadmove">移動</button><button class="btn danger" data-bg="cadremove">移除</button></div>`;
 }
 function closeBgPop() { $('#bgPop').classList.remove('open'); $('#bgBtn').setAttribute('aria-expanded', 'false'); }
 $('#bgBtn').onclick = e => { e.stopPropagation(); const p = $('#bgPop'); if (p.classList.contains('open')) return closeBgPop(); renderBgPop(); p.classList.add('open'); $('#bgBtn').setAttribute('aria-expanded', 'true'); };
@@ -3580,6 +3704,16 @@ $('#bgPop').addEventListener('click', e => {
   if (k === 'calib') { closeBgPop(); setTool('calib'); }
   if (k === 'move') { closeBgPop(); setTool('bgmove'); }
   if (k === 'remove') { commit(); delete S.bg; changed(); renderBgPop(); }
+  if (k === 'dxf') $('#dxfFile').click();
+  if (k === 'cadwalls') { closeBgPop(); cadToWalls(); }
+  if (k === 'cadmove') { closeBgPop(); setTool('cadmove'); }
+  if (k === 'cadremove') { commit(); delete S.cad; changed(); renderBgPop(); }
+});
+$('#dxfFile').addEventListener('change', e => { const f = e.target.files[0]; if (f) importDxf(f); e.target.value = ''; });
+$('#bgPop').addEventListener('change', e => {
+  const t = e.target; if (!S.cad) return;
+  if (t.dataset.bg === 'cadshow') { S.cad.show = t.checked; draw(); save(); }
+  if (t.dataset.cadl != null) { const off = new Set(S.cad.off || []); t.checked ? off.delete(t.dataset.cadl) : off.add(t.dataset.cadl); S.cad.off = [...off]; draw(); save(); }
 });
 $('#bgPop').addEventListener('input', e => {
   if (!S.bg) return;
@@ -4034,7 +4168,7 @@ addEventListener('blur', () => { walk.keys = {}; });
 const FB_CONFIG = { apiKey: 'AIzaSyB4JtHtKwcCtYi153npzQ1DNHKHZTW_ows', authDomain: 'zhugao-design.firebaseapp.com', projectId: 'zhugao-design', storageBucket: 'zhugao-design.firebasestorage.app', messagingSenderId: '805354716189', appId: '1:805354716189:web:796ba8d18ea12ecb151af4' };
 const FBV = '10.14.1';
 const COLS = FIELDS.filter(f => f !== 'comments');
-const META = ['no', 'title', 'bg', 'locks', 'estOff', 'extras', 'level'];
+const META = ['no', 'title', 'bg', 'locks', 'estOff', 'extras', 'level', 'cad'];
 const ROOTF = ['name', 'code', 'prices', 'feePct', 'tax', 'mats'];
 const PEER_COLORS = ['#C2571A', '#2F62B0', '#7646B3', '#B83A6B', '#2E7D5B', '#8A6A10'];
 function getMe() {
@@ -4193,7 +4327,7 @@ function onRemote() {
   if (mine.size) scheduleFlush();
   setCloudStatus();
 }
-function refImgs(pj = P) { return [...new Set([...(pj.mats || []).map(m => m.img), ...pj.sheets.flatMap(x => [x.bg?.img, ...x.rooms.flatMap(r => (r.board || []).map(b => b.img))])].filter(Boolean))]; }
+function refImgs(pj = P) { return [...new Set([...(pj.mats || []).map(m => m.img), ...pj.sheets.flatMap(x => [x.bg?.img, x.cad?.id, ...x.rooms.flatMap(r => (r.board || []).map(b => b.img))])].filter(Boolean))]; }
 function uploadImgs() {
   if (!cloud.ready) return;
   for (const id of refImgs()) {
@@ -5051,7 +5185,7 @@ addEventListener('keydown', e => {
   if (mod && k === 'a' && tab === 'plan' && mode !== '3d') { e.preventDefault(); setGroup(inRect({ a: { x: -1e9, y: -1e9 }, b: { x: 1e9, y: 1e9 } })); return; }
   if (tab !== 'plan' || mode === '3d') { if (tab === '3d' || mode === '3d') { if (k === 'arrowright') goView(T.vi + 1); if (k === 'arrowleft') goView(T.vi - 1); } return; }
   if (k === ' ') { spaceDown = true; cv.style.cursor = 'grab'; e.preventDefault(); return; }
-  if (k === 'escape') { if (linking) { setLinking(null); return; } if (draft) finishDraft(); else if (tool === 'calib' || tool === 'bgmove' || tool === 'elev') setTool('select'); else if (elevOpen()) closeElev(); else if ($('#bgPop').classList.contains('open')) closeBgPop(); else if ($('#sheetMenu').classList.contains('open')) closeSheetMenu(); else if ($('#layers').classList.contains('open')) closeLayers(); else if ($('#lib').classList.contains('open')) setLib(false); else select(null); return; }
+  if (k === 'escape') { if (linking) { setLinking(null); return; } if (draft) finishDraft(); else if (tool === 'calib' || tool === 'bgmove' || tool === 'cadmove' || tool === 'elev') setTool('select'); else if (elevOpen()) closeElev(); else if ($('#bgPop').classList.contains('open')) closeBgPop(); else if ($('#sheetMenu').classList.contains('open')) closeSheetMenu(); else if ($('#layers').classList.contains('open')) closeLayers(); else if ($('#lib').classList.contains('open')) setLib(false); else select(null); return; }
   if (k === '\\') { setPanel($('#work').classList.contains('no-insp')); return; }
   if (k === 'enter' && draft) { finishDraft(); return; }
   if (k === 'delete' || k === 'backspace') { e.preventDefault(); deleteSel(); return; }
