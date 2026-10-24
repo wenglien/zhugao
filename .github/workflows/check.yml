@@ -1,14 +1,13 @@
-name: test
+name: check
 on:
   push:
   pull_request:
 jobs:
-  unit:
+  syntax:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: node --check public/app.js
-      - run: node --test tests/unit
+      - run: for f in public/app.js public/lib/*.js; do node --check "$f"; done

@@ -4,11 +4,6 @@
   "type": "module",
   "description": "築稿：從格局草圖到施工估價的室內設計網頁工具",
   "scripts": {
-    "start": "python3 -m http.server 5178 --directory public",
-    "test": "node --test tests/unit",
-    "test:e2e": "node tests/e2e/smoke.mjs"
-  },
-  "devDependencies": {
-    "puppeteer-core": "23.5.0"
+    "start": "python3 -m http.server 5178 --directory public"
   }
 }

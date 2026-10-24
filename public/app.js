@@ -1755,6 +1755,7 @@ async function init3d() {
     const { OrbitControls } = await import('three/addons/controls/OrbitControls.js');
     const { RoomEnvironment } = await import('three/addons/environments/RoomEnvironment.js');
     const { RectAreaLightUniformsLib } = await import('three/addons/lights/RectAreaLightUniformsLib.js'); RectAreaLightUniformsLib.init();
+    ({ mergeGeometries: T.mergeGeos } = await import('three/addons/utils/BufferGeometryUtils.js'));
     const host = $('#v3box');
     const r = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
     r.setPixelRatio(Math.min(devicePixelRatio, 2)); r.outputColorSpace = THREE.SRGBColorSpace;
@@ -1772,17 +1773,22 @@ async function init3d() {
     console.error(err); T.loading = false; $('#v3msg').textContent = /WebGL/i.test(String(err && err.message)) ? '瀏覽器暫停了這個網站的 3D 繪圖，通常是顯示卡剛重設過。請完全關閉瀏覽器再重新開啟，平面編輯不受影響。' : '3D 預覽需要網路連線來載入繪圖元件。請確認連線後重新整理頁面，平面編輯不受影響。';
   }
 }
-function size3d() { if (!T.r) return; const host = $('#v3box'), w = host.clientWidth, h = host.clientHeight; if (!w || !h) return; T.r.setSize(w, h, false); T.cam.aspect = w / h; T.cam.updateProjectionMatrix(); }
+function size3d() { if (!T.r) return; const host = $('#v3box'), w = host.clientWidth, h = host.clientHeight; if (!w || !h) return; T.r.setSize(w, h, false); T.cam.aspect = w / h; T.cam.updateProjectionMatrix(); T.need = true; }
+// draw only when something changed: the camera moved, the scene was rebuilt, a texture arrived or the user touched a control
+for (const t of ['pointerdown', 'pointerup', 'wheel', 'keydown', 'input', 'change', 'click']) document.addEventListener(t, () => { T.need = true; }, { capture: true, passive: true });
+document.addEventListener('pointermove', e => { if (e.buttons) T.need = true; }, { capture: true, passive: true });
 function loop(now) {
   requestAnimationFrame(loop);
-  if (T.ptOn || mode === 'plan' || tab !== 'plan' && tab !== '3d') return;
+  const on = !T.ptOn && mode !== 'plan' && (tab === 'plan' || tab === '3d'); if (on && !T.on) T.need = true; T.on = on;
+  if (!on) return;
   if (dirty3d) build3d();
   if (T.fly) {
     const k = clamp((performance.now() - T.fly.start) / T.fly.dur, 0, 1), e = k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
-    T.cam.position.lerpVectors(T.fly.p0, T.fly.p1, e); T.ctl.target.lerpVectors(T.fly.t0, T.fly.t1, e); if (k >= 1) T.fly = null;
+    T.cam.position.lerpVectors(T.fly.p0, T.fly.p1, e); T.ctl.target.lerpVectors(T.fly.t0, T.fly.t1, e); if (k >= 1) T.fly = null; T.need = true;
   }
   if (walk.on) { stepWalk(); T.r.render(T.scene, T.cam); return; }
-  T.ctl.update(); T.r.render(T.scene, T.cam);
+  // a slow heartbeat covers any change that slipped past the flags above
+  if (T.ctl.update() || T.need || now - (T.drawn || 0) > 1000) { T.need = false; T.drawn = now; T.r.render(T.scene, T.cam); }
 }
 /* photo materials: textures load in the background and swap in when ready */
 const texStore = {}, texLoads = new Set();
@@ -1800,7 +1806,7 @@ function photoTex(url, s, tint, k, norm) {
   const ph = document.createElement('canvas'); ph.width = ph.height = 2; const g = ph.getContext('2d'); g.fillStyle = norm ? '#8080ff' : tint || '#bdb8ae'; g.fillRect(0, 0, 2, 2);
   const t = new THREE.Texture(ph); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(1 / s, 1 / s); t.anisotropy = Math.min(8, T.r.capabilities.getMaxAnisotropy());
   if (!norm) t.colorSpace = THREE.SRGBColorSpace; t.userData.keep = true; t.needsUpdate = true;
-  const p = loadImg(url).then(im => { t.dispose(); t.image = tint ? tintCanvas(im, tint, k) : im; t.needsUpdate = true; }).catch(() => { /* keep the flat colour */ }).finally(() => texLoads.delete(p));
+  const p = loadImg(url).then(im => { t.dispose(); t.image = tint ? tintCanvas(im, tint, k) : im; t.needsUpdate = true; T.need = true; }).catch(() => { /* keep the flat colour */ }).finally(() => texLoads.delete(p));
   texLoads.add(p);
   return (texStore[key] = t);
 }
@@ -1915,6 +1921,29 @@ function build3d() {
     const keep = S, z0 = S.level.z || 0;
     for (const sh of floorSheets()) { if (sh.level.name === keep.level.name) continue; const g2 = new THREE.Group(); g2.position.y = ((sh.level.z || 0) - z0) / 1000; root.add(g2); S = sh; try { level(g2, false); } finally { S = keep; } }
     T.coveQ = coveMain;
+  }
+  mergeStatic(root); T.need = true;
+}
+// a large plan is thousands of small boxes; drawing them one by one costs more than the GPU work itself,
+// so static meshes that share a material are baked into one. Lights, glass and the ceilings (hidden while rendering inside) stay separate.
+function mergeStatic(root) {
+  if (!T.mergeGeos) return;
+  root.updateMatrixWorld(true);
+  const inv = root.matrixWorld.clone().invert(), keep = o => o.isLight || o.name === 'ceilings' || (o.isMesh && (Array.isArray(o.material) || o.material.transparent));
+  const fixed = new Set(); root.traverse(o => { if (keep(o)) for (let p = o; p && p !== root; p = p.parent) fixed.add(p); });
+  const bins = new Map();
+  root.traverse(o => {
+    if (!o.isMesh || fixed.has(o)) return;
+    for (let p = o.parent; p && p !== root; p = p.parent) if (p.name === 'ceilings') return;
+    const g = o.geometry, k = [o.material.uuid, o.castShadow, o.receiveShadow, !!g.index, Object.keys(g.attributes).sort().join()].join('|');
+    if (!bins.has(k)) bins.set(k, []); bins.get(k).push(o);
+  });
+  // every picked mesh is baked, even one with a material of its own, because a merged parent takes its children with it
+  for (const list of bins.values()) {
+    const geos = list.map(o => { const g = o.geometry.clone(); g.clearGroups(); return g.applyMatrix4(o.matrixWorld.clone().premultiply(inv)); }), merged = T.mergeGeos(geos);
+    geos.forEach(g => g.dispose()); if (!merged) continue;
+    const m = new THREE.Mesh(merged, list[0].material); m.castShadow = list[0].castShadow; m.receiveShadow = list[0].receiveShadow; root.add(m);
+    for (const o of list) { o.geometry.dispose(); o.removeFromParent(); }
   }
 }
 function floorSheets() { const seen = new Set(); return P.sheets.filter(sh => sh.level && !seen.has(sh.level.name) && seen.add(sh.level.name)); }
@@ -3789,11 +3818,6 @@ function setCloudStatus() {
 function rememberRecent(pid, name) {
   try { const l = JSON.parse(localStorage.getItem('zhugao.recent') || '[]').filter(x => x.pid !== pid); l.unshift({ pid, name, at: Date.now() }); localStorage.setItem('zhugao.recent', JSON.stringify(l.slice(0, 8))); } catch (e) { /* ignore */ }
 }
-const shareUrl = () => `${location.origin}${location.pathname}?p=${cloud.pid}`;
-function peopleHtml() {
-  const ps = [{ ...cloud.me, name: meName() + '（你）', sheet: `${S.no} ${S.title}` }, ...cloud.peers.filter(p => Date.now() - (p.at || 0) < 75000)];
-  return ps.map(p => `<div class="person"><i class="av" style="background:${p.color}">${esc((p.name || '?').slice(0, 1))}</i><b>${esc(p.name)}</b><span>正在看 ${esc(p.sheet || '')}</span></div>`).join('');
-}
 function openShare(kind) { renderShare(kind); const d = $('#shareDlg'); if (!d.open) d.showModal(); }
 function saveMe() { const v = ($('#meName')?.value || '').trim(); cloud.me.name = v || '訪客'; try { localStorage.setItem('zhugao.me', JSON.stringify({ name: cloud.me.name, color: cloud.me.color })); } catch (e) { /* ignore */ } presencePing(true); if (cloud.pid && cloud.user) cloud.mod.updateDoc(cloud.mod.doc(cloud.fs, 'projects', cloud.pid, 'members', cloud.user.uid), { name: cloud.me.name }).catch(() => {}); }
 $('#shareBtn').onclick = () => openShare();
@@ -4276,7 +4300,6 @@ const canComment = () => canEdit() || cloud.role === 'commenter';
 const readOnly = () => !canEdit();
 const pidOnly = () => `${location.origin}${location.pathname}?p=${cloud.pid}`;
 const inviteUrl = t => `${pidOnly()}&i=${t}`;
-const uidNow = () => cloud.user?.uid || cloud.me.id;
 function setRoleUI() {
   const r = cloud.pid ? cloud.role : null;
   document.body.classList.toggle('ro', !!r && !canEdit()); document.body.classList.toggle('ro-view', r === 'viewer');
@@ -4647,22 +4670,6 @@ async function flushErr() {
 addEventListener('error', e => { if (e.message) reportError('error', e.message, e.error?.stack || `${e.filename}:${e.lineno}:${e.colno}`); });
 addEventListener('unhandledrejection', e => { const r = e.reason; reportError('promise', r?.message || String(r), r?.stack); });
 { const ce = console.error.bind(console); console.error = (...a) => { ce(...a); const e = a.find(x => x instanceof Error); reportError('logged', e ? e.message : a.map(String).join(' '), e?.stack); }; }
-
-/* ============ test hook ============ */
-// only with ?test=1: lets the automated tests load projects and time rendering without reaching into module scope
-if (new URLSearchParams(location.search).has('test')) {
-  const time = (fn, n) => { fn(); const t = performance.now(); for (let i = 0; i < n; i++) fn(); return (performance.now() - t) / n; };
-  window.__zhugaoTest = {
-    load(pj) { commit(); P = toProject(pj); bindSheet(); sel = null; changed(); fit(); },
-    stats: () => ({ sheets: P.sheets.length, walls: S.walls.length, rooms: S.rooms.length, items: S.items.length, mep: S.mep.length }),
-    drawMs: (n = 10) => time(drawNow, n),
-    changedMs: (n = 5) => time(() => changed({ remote: true }), n),
-    hitMs: (n = 200) => { const b = bounds(); return time(() => hit({ x: b.x + Math.random() * b.w, y: b.y + Math.random() * b.h }), n); },
-    estimateMs: (n = 5) => time(() => estimate(), n),
-    build3dMs() { if (!T.r) return null; const t = performance.now(); build3d(); return performance.now() - t; },
-    switchSheet: i => switchSheet(P.sheets[i].id)
-  };
-}
 
 /* ============ boot ============ */
 for (const g of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(g, e => e.preventDefault(), { passive: false });

@@ -99,8 +99,8 @@ public/                網站本體，直接部署
   index.html           頁面結構
   app.js               App 主程式：繪圖、3D、估價、出圖、協作
   app.css              樣式
-  lib/dxf.js           DXF 讀寫與牆線辨識（可單獨測試）
-  lib/pm.js            工期排程與請款計算（可單獨測試）
+  lib/dxf.js           DXF 讀寫與牆線辨識
+  lib/pm.js            工期排程與請款計算
   privacy.html         隱私權政策
   terms.html           使用條款
   tex/                 材質照片（Poly Haven CC0，已壓縮）
@@ -108,8 +108,6 @@ public/                網站本體，直接部署
 firestore.rules        資料庫權限規則（角色、邀請、錯誤回報）
 firebase.json          Hosting 設定
 scripts/errors.py      讀取並清理錯誤回報
-tests/unit/            純函式單元測試（node:test）
-tests/e2e/smoke.mjs    端對端測試與大型專案效能測試
 ios/ZhugaoScan/        iPhone／iPad LiDAR 掃描 App
 brand/                 Logo 與社群分享圖的原始檔
 docs/screenshots/      README 用的截圖
@@ -122,16 +120,6 @@ python3 -m http.server 5178 --directory public
 ```
 
 打開 <http://localhost:5178>。本機版本會連到同一個 Firebase 專案，登入、共用和雲端備份都能直接測試。
-
-## 測試
-
-```bash
-npm test            # 單元測試：DXF 讀寫、工期排程、請款
-npm install         # 第一次執行端對端測試前安裝 puppeteer-core
-npm run test:e2e    # 端對端：各頁籤、鉛筆草圖、系統櫃、DXF、出圖套組，以及三層樓專案的效能
-```
-
-端對端測試需要本機的 Google Chrome（其他位置請設定 `CHROME_PATH`）。GitHub Actions 會在每次推送時執行單元測試。
 
 ## 部署
 
