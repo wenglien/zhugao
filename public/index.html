@@ -322,6 +322,37 @@ svg.i.s{width:16px;height:16px}
 .pt-grid .seg{flex-wrap:wrap}
 .pt-bar{height:6px;border-radius:3px;background:var(--line);overflow:hidden;margin-top:10px}.pt-bar i{display:block;height:100%;width:0;background:var(--forest);transition:width .3s}
 .dlg .btn .i{width:16px;height:16px}
+.pm-empty{display:flex;flex-direction:column;align-items:flex-start;gap:10px;padding:22px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--sheet)}
+.pm-empty span{color:var(--ink-2);font-size:var(--t-sm);line-height:1.7}
+.pm-head{display:grid;grid-template-columns:170px 220px auto 1fr;gap:12px;align-items:end;margin-bottom:18px}
+.pm-sum{display:flex;flex-direction:column;align-items:flex-end;gap:2px}.pm-sum b{font-size:var(--t-lg)}.pm-sum span{font-size:var(--t-sm);color:var(--muted)}
+.gantt{border:1px solid var(--line);border-radius:var(--r-lg);background:var(--sheet);overflow:hidden}
+.g-row{display:grid;grid-template-columns:200px minmax(0,1fr);border-bottom:1px solid var(--line);min-height:48px}
+.g-row.open{background:var(--paper)}
+.g-name{display:flex;flex-direction:column;justify-content:center;align-items:flex-start;padding:6px 14px;text-align:left;border-right:1px solid var(--line);min-width:0}
+.g-name b{font-weight:500;font-size:var(--t-sm)}.g-name small{font-size:var(--t-xs);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.g-headrow{min-height:30px;font-size:var(--t-xs);color:var(--muted)}.g-headrow .g-name{padding:6px 14px}
+.g-track{position:relative;margin:0 14px}
+.g-week{position:absolute;top:8px;font-style:normal;font-size:11px;color:var(--muted);transform:translateX(-50%);white-space:nowrap}
+.g-week::before{content:"";position:absolute;left:50%;top:18px;height:2000px;border-left:1px dashed var(--line)}
+.g-bar{position:absolute;top:10px;height:12px;border-radius:6px;background:var(--forest-2)}.g-bar.done{background:#9AB09F}
+.g-today{position:absolute;top:0;bottom:0;border-left:2px solid #C2571A;z-index:1}
+.g-dates{position:absolute;top:26px;left:0;font-size:11px;color:var(--ink-2);white-space:nowrap}
+.g-bar,.g-dates{pointer-events:none}
+.g-detail{padding:14px 16px 16px 214px;border-bottom:1px solid var(--line);background:var(--paper)}
+.g-detail h4{margin:14px 0 6px;font-size:var(--t-sm);font-weight:500;color:var(--muted)}
+.pm-deps{display:flex;flex-wrap:wrap;gap:4px 14px}
+.f .chk input,.pm-deps input,.pm-check input[type=checkbox]{width:auto;min-height:0}
+.pm-ph{display:flex;align-items:center;gap:6px}
+.pm-check{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) auto auto;gap:8px;align-items:center;padding:6px 0;border-bottom:1px dashed var(--line)}
+.pm-check img{width:56px;height:42px;object-fit:cover;border-radius:6px;cursor:zoom-in}
+.pm-in{min-height:32px;border:1px solid var(--line-2);border-radius:7px;padding:4px 8px;font-size:var(--t-sm);background:#fff;min-width:0;width:100%}
+.pm-in.num{width:64px}
+.btn.sm{min-height:30px;padding:0 10px;font-size:var(--t-xs)}
+.pm-pays .tr{grid-template-columns:minmax(0,1.2fr) 110px minmax(0,1.4fr) 140px 200px;align-items:center}
+.pm-pays .tr span small{display:block;font-size:var(--t-xs);color:var(--muted);margin-top:2px}
+.pay-st{border:1px solid var(--line-2);border-radius:999px;padding:3px 10px;font-size:var(--t-xs);margin-right:6px;background:#fff}.pay-st.paid{background:#E3EEE5;border-color:#9AB09F;color:#2E4A37}
+@media (max-width:743px){ .pm-head{grid-template-columns:1fr 1fr} .pm-sum{grid-column:1/-1;align-items:flex-start} .g-row{grid-template-columns:120px minmax(0,1fr)} .g-detail{padding:12px} .pm-check{grid-template-columns:minmax(0,1fr) auto;} .pm-check .pm-in{grid-column:1/-1} .pm-pays .tr{grid-template-columns:1fr 1fr;grid-template-areas:none} }
 .pt-chip{position:absolute;left:50%;top:14px;transform:translateX(-50%);z-index:6;background:var(--ink);color:#fff;border-radius:999px;padding:8px 16px;font-size:var(--t-sm);box-shadow:var(--shadow)}
 .pt-chip.done{background:var(--forest)}
 .rgal{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -785,6 +816,7 @@ button.tr:hover{background:#F6F6F1}
       <button class="tab" role="tab" data-tab="3d" aria-selected="false">3D 預覽</button>
       <button class="tab" role="tab" data-tab="spec" aria-selected="false">物件規格</button>
       <button class="tab" role="tab" data-tab="est" aria-selected="false">估價</button>
+      <button class="tab" role="tab" data-tab="pm" aria-selected="false">工程管理</button>
       <button class="tab" role="tab" data-tab="ver" aria-selected="false">版本紀錄</button>
     </nav>
     <div class="top-actions">
@@ -942,7 +974,9 @@ button.tr:hover{background:#F6F6F1}
 
   <main class="page doc" id="specPage"><div class="doc-in" id="specIn"></div></main>
   <main class="page doc" id="estPage"><div class="doc-in" id="estIn"></div></main>
+  <main class="page doc" id="pmPage"><div class="doc-in" id="pmIn"></div></main>
   <main class="page doc" id="verPage"><div class="doc-in" id="verIn"></div></main>
+  <input type="file" id="pmPhoto" accept="image/*" capture="environment" hidden>
 </div>
 <div id="tip" role="tooltip"></div>
 <div class="tour" id="tour" hidden><div class="tour-spot"></div><div class="tour-card" role="dialog" aria-label="使用教學"><span class="tour-step"></span><b></b><p></p><div class="row-btns"><button class="btn btn-ghost" data-tour="skip">略過</button><button class="btn btn-primary" data-tour="next">下一步</button></div></div></div>
@@ -964,6 +998,7 @@ button.tr:hover{background:#F6F6F1}
 
 <script type="module">
 import { DxfWriter, parseDxf, decodeDxf, wallsFromSegs } from './lib/dxf.js';
+import { defaultPlan, schedule, payments, fromDate, toDate } from './lib/pm.js';
 /* ============ helpers ============ */
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -1224,7 +1259,7 @@ function changed(opts = {}) {
   if (!opts.keepInsp) renderInspector(); updLocks();
   $('#projName').textContent = P.name; $('#projCode').textContent = P.code;
   $('#sheetNo').textContent = S.no; $('#sheetTitle').textContent = S.title; if ($('#sheetMenu').classList.contains('open')) renderSheetMenu();
-  if (tab === 'spec') renderSpec(); if (tab === 'ver') renderVer(); if (tab === 'est') renderEst();
+  if (tab === 'spec') renderSpec(); if (tab === 'ver') renderVer(); if (tab === 'est') renderEst(); if (tab === 'pm' && !opts.keepPm) renderPm();
   if (elevOpen()) drawElev();
   renderRoomChips(); updEmpty();
 }
@@ -3434,6 +3469,120 @@ function sectionPages(sh, paper, startInfo) {
   }));
 }
 
+/* ============ project management ============ */
+let pmOpen = null, pmPhotoFor = null;
+const pmSheet = () => P.sheets.find(s => s.id === P.pm?.sheet) || P.sheets.find(s => s.walls.length) || P.sheets[0];
+function pmStats(sh) {
+  return withSheet(sh, () => ({ ping: S.rooms.reduce((a, r) => a + roomArea(r), 0) / PING, baths: S.rooms.filter(r => /浴|衛|廁/.test(r.name)).length, tileRooms: S.rooms.filter(r => r.tile || ['tile', 'stone', 'slate', 'terrazzo'].includes(r.floor)).length, ac: S.mep.filter(m => m.kind === 'ac').length, cabs: S.items.filter(i => CAB_KINDS.includes(i.kind)).length }));
+}
+const pmTotal = () => withSheet(pmSheet(), () => estimate().total);
+const md = s => { const d = toDate(s); return `${d.getMonth() + 1}/${d.getDate()}`; };
+function renderPm() {
+  const el = $('#pmIn'), ro = readOnly();
+  if (!P.pm) {
+    const st = pmStats(pmSheet());
+    el.innerHTML = `<h1>工程管理</h1><p class="lede">依照圖面自動排出施工順序與工期，再分派工班、在現場逐項拍照驗收，並依進度請款。</p>
+      <div class="pm-empty"><b>依 ${esc(pmSheet().no)} ${esc(pmSheet().title)} 建立工程排程</b><span>${st.ping.toFixed(1)} 坪，${st.baths} 間浴室，${st.cabs} 座櫃體，${st.ac} 台冷氣。工期是常見住宅翻修的估算，建立後都可以調整。</span>
+      ${ro ? '' : '<button class="btn btn-primary" data-pm="create">建立工程排程</button>'}</div>`;
+    return;
+  }
+  const pm = P.pm, sc = schedule(pm, !!pm.sundays), t0 = toDate(sc.start), span = Math.max(1, (toDate(sc.end) - t0) / 864e5 + 1), x = s => ((toDate(s) - t0) / 864e5) / span * 100;
+  const today = fromDate(new Date()), tx = today >= sc.start && today <= sc.end ? x(today) : null, total = pmTotal(), pays = payments(pm, total);
+  const weeks = []; for (let d = new Date(t0); d <= toDate(sc.end); d.setDate(d.getDate() + 7)) weeks.push(fromDate(d));
+  const doneN = pm.tasks.filter(t => t.done).length;
+  el.innerHTML = `<h1>工程管理</h1><p class="lede">施工順序依前置工項自動排定（週日${pm.sundays ? '照常' : '不'}施工）。點一個工項可以設定工班、勾選驗收項目並拍照存證。</p>
+    <div class="pm-head">
+      <div class="f"><label>開工日</label><input type="date" data-pmf="start" value="${pm.start}"></div>
+      <div class="f"><label>估價依據</label><select data-pmf="sheet">${P.sheets.map(s => `<option value="${s.id}" ${s === pmSheet() ? 'selected' : ''}>${esc(s.no)} ${esc(s.title)}</option>`).join('')}</select></div>
+      <label class="chk"><input type="checkbox" data-pmf="sundays" ${pm.sundays ? 'checked' : ''}>週日施工</label>
+      <div class="pm-sum"><b>${md(sc.start)} 開工，${md(sc.end)} 完工</b><span>共 ${sc.days} 天，完成 ${doneN} / ${pm.tasks.length} 項</span></div>
+    </div>
+    <div class="gantt" role="table" aria-label="工程進度">
+      <div class="g-row g-headrow"><span class="g-name">工項</span><div class="g-track">${weeks.map(w => `<i class="g-week" style="left:${x(w)}%">${md(w)}</i>`).join('')}</div></div>
+      ${sc.rows.map(({ t, start, end }) => { const ok = t.checks.filter(c => c.ok).length; return `<div class="g-row ${pmOpen === t.id ? 'open' : ''}" data-task="${t.id}" role="row"><button class="g-name" data-pmopen="${t.id}"><b>${t.done ? '✓ ' : ''}${esc(t.name)}</b><small>${esc(t.crew || '尚未指派工班')}</small></button>
+        <div class="g-track">${tx != null ? `<i class="g-today" style="left:${tx}%"></i>` : ''}<i class="g-bar ${t.done ? 'done' : ''}" style="left:${x(start)}%;width:${Math.max(1.5, (toDate(end) - toDate(start)) / 864e5 + 1) / span * 100}%"></i><span class="g-dates">${md(start)}–${md(end)}，${t.days} 天，驗收 ${ok}/${t.checks.length}</span></div></div>
+        ${pmOpen === t.id ? pmTaskHtml(t, ro) : ''}`; }).join('')}
+    </div>
+    ${ro ? '' : '<div class="row-btns" style="margin-top:12px"><button class="btn" data-pm="addTask">新增工項</button><button class="btn btn-ghost" data-pm="regen">依目前圖面重新產生</button></div>'}
+    <h2>請款</h2><p class="lede" style="margin-bottom:12px">依 ${esc(pmSheet().no)} 估價總額 ${nt(total)}（含管理費與稅）分期。</p>
+    <div class="table pm-pays"><div class="tr head"><span>期別</span><span>比例</span><span>請款時間點</span><span>金額</span><span>狀態</span></div>
+      ${pays.map(p => { const at = sc.rows.find(r => r.t.id === p.after); return `<div class="tr" data-pay="${p.id}"><span><input class="pm-in" data-payf="name" value="${esc(p.name)}" aria-label="期別名稱"></span><span><input class="pm-in num" type="number" data-payf="pct" value="${p.pct}" min="0" max="100" aria-label="比例"> %</span>
+        <span><select class="pm-in" data-payf="after"><option value="" ${!p.after ? 'selected' : ''}>簽約時</option>${pm.tasks.map(t => `<option value="${t.id}" ${p.after === t.id ? 'selected' : ''}>${esc(t.name)}完成</option>`).join('')}</select><small>${at ? `預計 ${md(at.end)}` : `預計 ${md(sc.start)}`}</small></span>
+        <span class="num"><b>${nt(p.amount)}</b></span><span><button class="pay-st ${p.paid ? 'paid' : ''}" data-paytoggle="${p.id}">${p.paid ? `已收款 ${p.paidAt ? md(p.paidAt) : ''}` : '未收款'}</button><button class="btn btn-ghost sm" data-payprint="${p.id}">請款單</button></span></div>`; }).join('')}
+    </div>
+    ${pays.reduce((a, p) => a + p.pct, 0) !== 100 ? `<p class="note" style="color:#B4561C">各期比例加總是 ${pays.reduce((a, p) => a + p.pct, 0)}%，請調整成 100%。</p>` : ''}
+    ${ro ? '' : '<div class="row-btns" style="margin-top:10px"><button class="btn" data-pm="addPay">新增請款期別</button></div>'}`;
+  if (ro) $$('#pmIn input, #pmIn select').forEach(i => { i.disabled = true; });
+}
+function pmTaskHtml(t, ro) {
+  const others = P.pm.tasks.filter(o => o.id !== t.id);
+  return `<div class="g-detail"><div class="fields">
+      <div class="f"><label>工項</label><input data-taskf="name" value="${esc(t.name)}"></div><div class="f"><label>工期</label><div class="unit"><input type="number" min="1" data-taskf="days" value="${t.days}"><em>天</em></div></div><div class="f"><label>完成</label><label class="chk"><input type="checkbox" data-taskf="done" ${t.done ? 'checked' : ''}>已完成</label></div></div>
+    <div class="fields two" style="margin-top:10px"><div class="f"><label>工班或負責人</label><input data-taskf="crew" value="${esc(t.crew || '')}" placeholder="例如：陳師傅水電"></div><div class="f"><label>聯絡電話</label><input data-taskf="phone" type="tel" value="${esc(t.phone || '')}"></div></div>
+    ${t.phone ? `<p class="note"><a class="link" href="tel:${esc(t.phone)}">撥打 ${esc(t.phone)}</a></p>` : ''}
+    <h4>前置工項</h4><div class="pm-deps">${others.map(o => `<label class="chk"><input type="checkbox" data-dep="${o.id}" ${t.after.includes(o.id) ? 'checked' : ''}>${esc(o.name)}</label>`).join('')}</div>
+    <h4>現場驗收</h4><div class="pm-checks">${t.checks.map(c => `<div class="pm-check" data-check="${c.id}"><label class="chk"><input type="checkbox" data-checkf="ok" ${c.ok ? 'checked' : ''}>${esc(c.text)}</label>
+      <input class="pm-in" data-checkf="note" value="${esc(c.note || '')}" placeholder="備註"><span class="pm-ph">${c.photo && IMGS[c.photo] ? `<img src="${IMGS[c.photo]}" alt="驗收照片" data-checkview>` : ''}${ro ? '' : `<button class="btn btn-ghost sm" data-checkphoto>${c.photo ? '換照片' : '拍照'}</button>`}</span>${ro ? '' : `<button class="icon-btn" data-checkdel aria-label="刪除這項">${IC.close}</button>`}</div>`).join('')}</div>
+    ${ro ? '' : `<div class="row-btns" style="margin-top:8px"><input class="pm-in" id="newCheck" placeholder="新增驗收項目"><button class="btn" data-pm="addCheck">加入</button><button class="btn danger" data-pm="delTask">刪除工項</button></div>`}</div>`;
+}
+// keep: text being typed in place, so the page is not redrawn under the cursor
+function pmEdit(fn, keep) { commit(); fn(); changed({ keepPm: keep }); }
+$('#pmPage').addEventListener('click', async e => {
+  const b = e.target.closest('button,img[data-checkview]'); if (!b) return; const k = b.dataset.pm;
+  if (k === 'create') { const d = new Date(); d.setDate(d.getDate() + 7); pmEdit(() => { P.pm = { ...defaultPlan(pmStats(pmSheet()), fromDate(d)), sheet: pmSheet().id }; }); return; }
+  if (k === 'regen') { if (!confirm('依目前圖面重新產生工項與請款期別？已填的工班與驗收紀錄會清除。')) return; pmEdit(() => { P.pm = { ...defaultPlan(pmStats(pmSheet()), P.pm.start), sheet: P.pm.sheet, sundays: P.pm.sundays }; }); return; }
+  if (k === 'addTask') { const last = P.pm.tasks.at(-1); pmEdit(() => { const t = { id: uid(), name: '新工項', days: 2, after: last ? [last.id] : [], crew: '', phone: '', done: false, checks: [] }; P.pm.tasks.push(t); pmOpen = t.id; }); return; }
+  if (k === 'addPay') { pmEdit(() => P.pm.pays.push({ id: uid(), name: '新期別', pct: 0, after: '', paid: false })); return; }
+  if (b.dataset.pmopen) { pmOpen = pmOpen === b.dataset.pmopen ? null : b.dataset.pmopen; renderPm(); return; }
+  if (b.dataset.paytoggle) { const p = P.pm.pays.find(q => q.id === b.dataset.paytoggle); pmEdit(() => { p.paid = !p.paid; p.paidAt = p.paid ? fromDate(new Date()) : undefined; }); return; }
+  if (b.dataset.payprint) { printPay(b.dataset.payprint); return; }
+  const t = P.pm?.tasks.find(x => x.id === pmOpen); if (!t) return;
+  if (k === 'addCheck') { const v = $('#newCheck').value.trim(); if (!v) return; pmEdit(() => t.checks.push({ id: uid(), text: v, ok: false })); return; }
+  if (k === 'delTask') { if (!confirm(`刪除「${t.name}」？`)) return; pmEdit(() => { P.pm.tasks = P.pm.tasks.filter(x => x !== t); P.pm.tasks.forEach(x => { x.after = x.after.filter(a => a !== t.id); }); P.pm.pays.forEach(p => { if (p.after === t.id) p.after = ''; }); pmOpen = null; }); return; }
+  const row = b.closest('[data-check]'), c = row && t.checks.find(x => x.id === row.dataset.check); if (!c) return;
+  if (b.dataset.checkphoto != null) { pmPhotoFor = [t.id, c.id]; $('#pmPhoto').click(); return; }
+  if (b.dataset.checkdel != null) { pmEdit(() => { t.checks = t.checks.filter(x => x !== c); }); return; }
+  if (b.dataset.checkview != null) window.open().document.write(`<img src="${IMGS[c.photo]}" style="max-width:100%">`);
+});
+$('#pmPage').addEventListener('change', e => {
+  const i = e.target, pm = P.pm; if (!pm) return;
+  if (i.dataset.pmf) { pmEdit(() => { if (i.dataset.pmf === 'sundays') pm.sundays = i.checked; else if (i.dataset.pmf === 'start') pm.start = i.value || pm.start; else pm.sheet = i.value; }); return; }
+  const pay = i.closest('[data-pay]'); if (pay && i.dataset.payf) { const p = pm.pays.find(q => q.id === pay.dataset.pay); pmEdit(() => { p[i.dataset.payf] = i.dataset.payf === 'pct' ? clamp(+i.value || 0, 0, 100) : i.value; }); return; }
+  const t = pm.tasks.find(x => x.id === pmOpen); if (!t) return;
+  if (i.dataset.taskf) { pmEdit(() => { const f = i.dataset.taskf; t[f] = f === 'done' ? i.checked : f === 'days' ? Math.max(1, Math.round(+i.value || 1)) : i.value; }); return; }
+  if (i.dataset.dep) { pmEdit(() => { const s = new Set(t.after); i.checked ? s.add(i.dataset.dep) : s.delete(i.dataset.dep); t.after = [...s]; }); return; }
+  const row = i.closest('[data-check]'), c = row && t.checks.find(x => x.id === row.dataset.check); if (!c) return;
+  pmEdit(() => { if (i.dataset.checkf === 'ok') c.ok = i.checked; else c.note = i.value; }, i.dataset.checkf === 'note');
+});
+$('#pmPhoto').addEventListener('change', async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f || !pmPhotoFor) return; const url = URL.createObjectURL(f);
+  try {
+    const im = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+    const k = Math.min(1, 1100 / Math.max(im.naturalWidth, im.naturalHeight)), c = document.createElement('canvas'); c.width = Math.round(im.naturalWidth * k); c.height = Math.round(im.naturalHeight * k); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+    const id = uid(); IMGS[id] = c.toDataURL('image/jpeg', .78); saveImgs();
+    const [tid, cid] = pmPhotoFor, t = P.pm.tasks.find(x => x.id === tid), ch = t?.checks.find(x => x.id === cid); if (!ch) return;
+    pmEdit(() => { ch.photo = id; ch.ok = true; ch.at = Date.now(); }); flash('已存入驗收照片');
+  } catch (err) { alert('無法讀取這張照片。'); } finally { URL.revokeObjectURL(url); }
+});
+async function printPay(id) {
+  await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'); await document.fonts?.ready;
+  const total = pmTotal(), pays = payments(P.pm, total), i = pays.findIndex(p => p.id === id), p = pays[i]; if (!p) return;
+  const paper = 'a4', pg = newPage(paper), a = drawFrame(pg, { title: `請款單 第 ${i + 1} 期`, no: `PAY-${String(i + 1).padStart(2, '0')}`, scale: '無', page: 1, total: 1 }), g = pg.g, m = v => v * PD;
+  const paidBefore = pays.slice(0, i).filter(q => q.paid).reduce((s, q) => s + q.amount, 0), sc = schedule(P.pm, !!P.pm.sundays), at = sc.rows.find(r => r.t.id === p.after);
+  const line2 = (y, l, v, big) => { g.fillStyle = '#6B6B62'; g.font = `400 ${m(3.4)}px ${FONT}`; g.textBaseline = 'alphabetic'; g.fillText(l, m(a.ax + 10), m(y)); g.fillStyle = '#23241F'; g.font = `${big ? 700 : 500} ${m(big ? 6 : 3.8)}px ${FONT}`; g.textAlign = 'right'; g.fillText(v, m(a.ax + a.aw - 10), m(y)); g.textAlign = 'left'; g.strokeStyle = '#DEDDD3'; g.lineWidth = m(.2); g.beginPath(); g.moveTo(m(a.ax + 10), m(y + 3)); g.lineTo(m(a.ax + a.aw - 10), m(y + 3)); g.stroke(); };
+  g.fillStyle = '#23241F'; g.font = `700 ${m(8)}px ${FONT}`; g.textBaseline = 'alphabetic'; g.fillText('請款單', m(a.ax + 10), m(a.ay + 22));
+  g.font = `400 ${m(3.4)}px ${FONT}`; g.fillStyle = '#47483F'; g.fillText(`${P.name}（${P.code}）　開立日期 ${today()}`, m(a.ax + 10), m(a.ay + 32));
+  let y = a.ay + 50;
+  for (const [l, v, big] of [['請款期別', `第 ${i + 1} 期：${p.name}`], ['請款條件', at ? `${at.t.name}完成（預計 ${at.end}）` : '簽約時'], ['工程總價（含管理費與稅）', nt(total)], ['本期比例', `${p.pct}%`], ['前期已收款', nt(paidBefore)], ['本期請款金額', nt(p.amount), true]]) { line2(y, l, v, big); y += big ? 16 : 12; }
+  g.fillStyle = '#47483F'; g.font = `400 ${m(3)}px ${FONT}`; ['請於收到請款單後 7 日內付款。', '付款資訊與發票開立方式請依合約約定。'].forEach((t2, k) => g.fillText(t2, m(a.ax + 10), m(y + 8 + k * 6)));
+  const doc = new window.jspdf.jsPDF({ orientation: 'landscape', unit: 'mm', format: paper, compress: true }), [w, h] = PAPER[paper];
+  doc.addImage(pg.c.toDataURL('image/jpeg', .92), 'JPEG', 0, 0, w, h, undefined, 'FAST'); doc.save(`${P.code}-請款單-第${i + 1}期.pdf`);
+}
+function pmRows() {
+  if (!P.pm) return null; const sc = schedule(P.pm, !!P.pm.sundays);
+  return sc.rows.map(({ t, start, end }) => [t.name, t.crew || '', start, end, `${t.days}`, `${t.checks.filter(c => c.ok).length} / ${t.checks.length}${t.done ? '，已完成' : ''}`]);
+}
+
 /* ============ lighting ============ */
 const LS = .01; // three.js light units per candela, so exposure stays in a comfortable range
 const fxOf = m => FX[m.fx] || FX.down;
@@ -3784,10 +3933,10 @@ function setTab(t) {
   tab = t; $$('.tab').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === t));
   const isWork = t === 'plan' || t === '3d';
   $('#homePage').classList.toggle('on', t === 'home'); document.body.classList.toggle('at-home', t === 'home'); if (t === 'home') { renderHome(); $('#homePage').scrollTop = 0; }
-  $('#work').classList.toggle('on', isWork); $('#specPage').classList.toggle('on', t === 'spec'); $('#verPage').classList.toggle('on', t === 'ver'); $('#estPage').classList.toggle('on', t === 'est');
+  $('#work').classList.toggle('on', isWork); $('#specPage').classList.toggle('on', t === 'spec'); $('#verPage').classList.toggle('on', t === 'ver'); $('#estPage').classList.toggle('on', t === 'est'); $('#pmPage').classList.toggle('on', t === 'pm');
   if (t === 'plan') setMode(lastWorkMode === '3d' ? 'plan' : lastWorkMode);
   if (t === '3d') { setMode('3d'); }
-  if (t === 'spec') renderSpec(); if (t === 'ver') renderVer(); if (t === 'est') renderEst();
+  if (t === 'spec') renderSpec(); if (t === 'ver') renderVer(); if (t === 'est') renderEst(); if (t === 'pm') renderPm();
   closeBgPop(); setSheet(false); closeLayers(); if (t !== 'plan') $('#lib').classList.remove('open');
 }
 
@@ -4444,7 +4593,7 @@ const FB_CONFIG = { apiKey: 'AIzaSyB4JtHtKwcCtYi153npzQ1DNHKHZTW_ows', authDomai
 const FBV = '10.14.1';
 const COLS = FIELDS.filter(f => f !== 'comments');
 const META = ['no', 'title', 'bg', 'locks', 'estOff', 'extras', 'level', 'cad'];
-const ROOTF = ['name', 'code', 'prices', 'feePct', 'tax', 'mats'];
+const ROOTF = ['name', 'code', 'prices', 'feePct', 'tax', 'mats', 'pm'];
 const PEER_COLORS = ['#C2571A', '#2F62B0', '#7646B3', '#B83A6B', '#2E7D5B', '#8A6A10'];
 function getMe() {
   let m = {}, cid; try { m = JSON.parse(localStorage.getItem('zhugao.me') || '{}'); } catch (e) { /* ignore */ }
@@ -4522,7 +4671,7 @@ function encSheet(sh) {
 const orderBy = (list, ord) => { if (!ord) return list; const ix = new Map(ord.map((id, i) => [id, i])); return list.sort((p, q) => (ix.get(p.id) ?? 1e9) - (ix.get(q.id) ?? 1e9)); };
 function decode() {
   const r = cloud.rootDoc; if (!r || !cloud.sheetDocs) return null;
-  const pj = { name: r.name || '未命名專案', code: r.code || 'C01', prices: r.prices ? JSON.parse(r.prices) : null, feePct: r.feePct ?? null, tax: r.tax ?? null, mats: r.mats ? JSON.parse(r.mats) : null, sheets: [] };
+  const pj = { name: r.name || '未命名專案', code: r.code || 'C01', prices: r.prices ? JSON.parse(r.prices) : null, feePct: r.feePct ?? null, tax: r.tax ?? null, mats: r.mats ? JSON.parse(r.mats) : null, pm: r.pm ? JSON.parse(r.pm) : null, sheets: [] };
   for (const d of cloud.sheetDocs) {
     const sh = { id: d.id };
     for (const k of META) { let v = null; try { v = d['m_' + k] != null ? JSON.parse(d['m_' + k]) : null; } catch (e) { /* ignore */ } if (v != null) sh[k] = v; }
@@ -4547,7 +4696,7 @@ function flushOps(ops) {
   const sref = id => doc(fs, 'projects', cloud.pid, 'sheets', id), rootUp = {}, sheetUp = {}, su = sid => (sheetUp[sid] = sheetUp[sid] || {});
   const whole = new Set(ops.filter(o => o.t === 'sheetAdd' || o.t === 'sheetDel').map(o => o.sid || o.sh.id));
   for (const op of ops) {
-    if (op.t === 'root') rootUp[op.k] = op.k === 'prices' || op.k === 'mats' ? JSON.stringify(op.v) : op.v;
+    if (op.t === 'root') rootUp[op.k] = ['prices', 'mats', 'pm'].includes(op.k) ? JSON.stringify(op.v) : op.v;
     else if (op.t === 'sheetAdd') b.set(sref(op.sh.id), encSheet(op.sh));
     else if (op.t === 'sheetDel') b.delete(sref(op.sid));
     else if (whole.has(op.sid)) continue;
@@ -4602,7 +4751,7 @@ function onRemote() {
   if (mine.size) scheduleFlush();
   setCloudStatus();
 }
-function refImgs(pj = P) { return [...new Set([...(pj.mats || []).map(m => m.img), ...pj.sheets.flatMap(x => [x.bg?.img, x.cad?.id, ...x.rooms.flatMap(r => (r.board || []).map(b => b.img))])].filter(Boolean))]; }
+function refImgs(pj = P) { return [...new Set([...(pj.mats || []).map(m => m.img), ...(pj.pm?.tasks || []).flatMap(t => t.checks.map(c => c.photo)), ...pj.sheets.flatMap(x => [x.bg?.img, x.cad?.id, ...x.rooms.flatMap(r => (r.board || []).map(b => b.img))])].filter(Boolean))]; }
 function uploadImgs() {
   if (!cloud.ready) return;
   for (const id of refImgs()) {
@@ -5060,6 +5209,7 @@ async function buildPdf(opts, progress) {
   if (opts.sec) sheets.forEach(sh => jobs.push(info => sectionPages(sh, opts.paper, info)));
   if (opts.tile) sheets.filter(sh => sh.rooms.some(r => r.tile)).forEach(sh => jobs.push(info => [planPage(sh, opts.paper, { ...info, title: `${sh.no} 地坪分割圖`, no: `${sh.no}-FL` }, 'tile', false)]));
   if (opts.detail) jobs.push(info => [detailPage(opts.paper, info)]);
+  if (opts.pm && P.pm) jobs.push(info => tablePages(opts.paper, { ...info, title: '工程進度表', no: 'PM-01', scale: '無' }, '工程進度表', ['工項', '工班', '開始', '完成', '工期（天）', '驗收'], [40, 34, 22, 22, 16, 30], pmRows()));
   if (opts.spec) jobs.push(info => tablePages(opts.paper, { ...info, title: '物件規格表', no: 'S-01', scale: '無' }, '物件規格表', ['編號', '項目', '空間', '尺寸 W×D×H', '離地', '材質／類型', '備註'], [14, 34, 22, 34, 12, 20, 44], specRows()));
   if (opts.renders) { const rs = await pdfRenders(); rs.forEach((r, i) => jobs.push(info => [renderPage(r, i, opts.paper, info)])); }
   if (opts.est) sheets.filter(sh => sh.walls.length).forEach((sh, i) => jobs.push(info => tablePages(opts.paper, { ...info, title: `估價單 ${sh.no}`, no: `Q-${String(i + 1).padStart(2, '0')}`, scale: '無' }, `估價單：${sh.no} ${sh.title}`, ['工項', '數量', '單位', '單價', '小計', '備註'], [60, 16, 12, 24, 28, 50], estRows(sh))));
@@ -5095,7 +5245,7 @@ function openPdfDlg() {
   $('#pdfBody').innerHTML = `<div class="dlg-in"><h2>輸出出圖套組</h2><p>把 ${n} 張圖面整理成一份 PDF，每頁都有圖框、比例尺與簽名欄，印出時選「實際大小」即符合標示比例。</p>
     <div class="f"><label for="firmIn">事務所或設計師名稱（顯示在圖框）</label><input id="firmIn" value="${esc(P.firm || '')}" placeholder="例如：森林室內設計" maxlength="24"></div>
     <h3>紙張</h3><div class="seg" role="group" aria-label="紙張"><button data-paper="a3" aria-pressed="${(P.paper || 'a3') === 'a3'}">A3 橫式</button><button data-paper="a4" aria-pressed="${P.paper === 'a4'}">A4 橫式</button></div>
-    <h3>內容</h3><div class="pdf-opts">${[['legend', '圖例與符號說明'], ['plan', '平面圖（含水電、標註）'], ['auto', '平面圖加上自動尺寸標註'], ['ceil', '天花平面圖（天花高度、燈具、開關迴路）'], ['elev', '立面圖（有櫃體或門窗的牆）'], ['cab', '系統櫃詳圖與板材裁切清單'], ['sec', '剖面圖（平面上畫的剖面線）'], ['tile', '地坪分割圖'], ['detail', '大樣圖（天花燈槽、地坪收邊）'], ['renders', '效果圖（渲染相簿）'], ['spec', '物件規格表'], ['est', '估價單']].map(([k, l]) => `<label class="chk"><input type="checkbox" data-pdf="${k}" checked>${l}</label>`).join('')}</div>
+    <h3>內容</h3><div class="pdf-opts">${[['legend', '圖例與符號說明'], ['plan', '平面圖（含水電、標註）'], ['auto', '平面圖加上自動尺寸標註'], ['ceil', '天花平面圖（天花高度、燈具、開關迴路）'], ['elev', '立面圖（有櫃體或門窗的牆）'], ['cab', '系統櫃詳圖與板材裁切清單'], ['sec', '剖面圖（平面上畫的剖面線）'], ['tile', '地坪分割圖'], ['detail', '大樣圖（天花燈槽、地坪收邊）'], ['pm', '工程進度表'], ['renders', '效果圖（渲染相簿）'], ['spec', '物件規格表'], ['est', '估價單']].map(([k, l]) => `<label class="chk"><input type="checkbox" data-pdf="${k}" checked>${l}</label>`).join('')}</div>
     <p class="note" id="pdfProg" aria-live="polite"></p>
     <div class="row-btns"><button class="btn btn-primary" id="pdfGo">產生 PDF</button><button class="btn" data-close>取消</button></div></div>`;
   if (!d.open) d.showModal();
@@ -5275,7 +5425,7 @@ async function createShare() {
   const btn = $('[data-sh="create"]'); if (btn) { btn.disabled = true; btn.textContent = '建立中…'; }
   try {
     const { doc, writeBatch, serverTimestamp } = cloud.mod, fs = cloud.fs, pid = randId(24), b = writeBatch(fs), me = cloud.user.uid;
-    b.set(doc(fs, 'projects', pid), { name: P.name, code: P.code, prices: JSON.stringify(P.prices ?? null), mats: JSON.stringify(P.mats ?? null), feePct: P.feePct ?? null, tax: P.tax ?? null, sheetOrder: P.sheets.map(s => s.id), ownerUid: me, ownerName: meName(), createdAt: serverTimestamp(), updatedAt: serverTimestamp(), lastEdit: { by: meName(), color: cloud.me.color, cid: cloud.me.id, what: '建立了共用專案', at: Date.now() } });
+    b.set(doc(fs, 'projects', pid), { name: P.name, code: P.code, prices: JSON.stringify(P.prices ?? null), mats: JSON.stringify(P.mats ?? null), pm: JSON.stringify(P.pm ?? null), feePct: P.feePct ?? null, tax: P.tax ?? null, sheetOrder: P.sheets.map(s => s.id), ownerUid: me, ownerName: meName(), createdAt: serverTimestamp(), updatedAt: serverTimestamp(), lastEdit: { by: meName(), color: cloud.me.color, cid: cloud.me.id, what: '建立了共用專案', at: Date.now() } });
     b.set(doc(fs, 'projects', pid, 'members', me), { role: 'owner', name: meName(), email: cloud.user.email || '', joinedAt: Date.now() });
     b.set(doc(fs, 'projects', pid, 'invites', randId(20)), { role: 'editor', revoked: false, createdAt: Date.now(), by: me });
     for (const sh of P.sheets) b.set(doc(fs, 'projects', pid, 'sheets', sh.id), encSheet(sh));
