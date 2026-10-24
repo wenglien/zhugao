@@ -833,6 +833,7 @@ button.tr:hover{background:#F6F6F1}
             <div class="lrow"><label class="chk"><input type="checkbox" data-layer="auto">自動尺寸標註</label></div>
             <div class="lrow"><label class="chk"><input type="checkbox" data-layer="comments" checked>留言</label></div>
             <div class="lrow"><label class="chk"><input type="checkbox" data-layer="ceil">天花高度與燈槽</label></div>
+            <div class="lrow"><label class="chk"><input type="checkbox" data-layer="tiles">地坪分割</label></div>
             <div class="lrow"><label class="chk"><input type="checkbox" data-layer="lux">照度分析</label></div>
             <div class="lrow"><label class="chk"><input type="checkbox" data-layer="grid" checked>格線</label></div>
             <p class="lnote">鎖定的圖層無法選取或拖動，例如描水電圖時先鎖住牆體。</p>
@@ -944,6 +945,7 @@ button.tr:hover{background:#F6F6F1}
 <div class="tour" id="tour" hidden><div class="tour-spot"></div><div class="tour-card" role="dialog" aria-label="使用教學"><span class="tour-step"></span><b></b><p></p><div class="row-btns"><button class="btn btn-ghost" data-tour="skip">略過</button><button class="btn btn-primary" data-tour="next">下一步</button></div></div></div>
 <dialog class="dlg" id="pdfDlg" aria-label="輸出出圖套組"><div id="pdfBody"></div></dialog>
 <dialog class="dlg dlg-wide" id="ptDlg" aria-label="照片級渲染"><div id="ptBody"></div></dialog>
+<dialog class="dlg dlg-wide" id="secDlg" aria-label="剖面圖"><div id="secBody"></div></dialog>
 <dialog class="dlg dlg-wide" id="cabDlg" aria-label="櫃體內部"><div id="cabBody"></div></dialog>
 <dialog class="dlg" id="matDlg" aria-label="自訂材質"><form method="dialog" class="dlg-in" id="matForm">
   <h2>新增自訂材質</h2><p>上傳板材、磁磚或布料的色樣照片，填入照片實際涵蓋的寬度，3D 會以真實比例鋪貼，估價也會分開列項。</p>
@@ -1059,6 +1061,8 @@ function sample() {
   R('浴室 2', 9000, 4600, 2000, 2600, 'tile', 9900, 6000); R('儲藏室', 9000, 7200, 2000, 1800, 'micro', 10000, 7750);
   const CEILS = { 餐廚: { h: 2650 }, 客廳: { type: 'drop', h: 2750, drop: 300, band: 600, cove: true }, 玄關: { h: 2500 }, '浴室 1': { h: 2400 }, 主臥: { type: 'drop', h: 2700, drop: 250, band: 450, cove: true }, 雙人工作區: { h: 2700 }, '浴室 2': { h: 2400 }, 儲藏室: { type: 'open' } };
   for (const r of S.rooms) if (CEILS[r.name]) r.ceil = { ...CEILS[r.name] };
+  for (const r of S.rooms) if (/浴室/.test(r.name)) r.tile = { w: 300, h: 600, j: 2, pat: 'half', org: 'center', rot: 0 };
+  S.sections = [{ id: uid(), name: 'A', x1: -600, y1: 6600, x2: 11600, y2: 6600, look: -1 }, { id: uid(), name: 'B', x1: 8200, y1: -600, x2: 8200, y2: 9600, look: 1 }];
   const I = (kind, code, name, x, y, w, d, h, rot = 0, mat, z = 0, note = '') => S.items.push({ id: uid(), kind, code, name, x, y, w, d, h, rot, mat: mat || LIB[kind].mat, z, note });
   I('counter', 'K01', '一字型廚具', 1700, 410, 3030, 620, 900, 0, 'white', 0, '人造石檯面，水槽靠窗');
   I('upper', 'K02', '廚房吊櫃', 715, 275, 1060, 350, 700, 0, 'white', 1500);
@@ -1147,7 +1151,7 @@ function makePrev(proj) {
 /* ============ state ============ */
 const KEY = 'zhugao.project.v1';
 let P, S, VERS = [];
-const FIELDS = ['walls', 'openings', 'rooms', 'items', 'mep', 'pipes', 'marks', 'texts', 'dims', 'views', 'comments'];
+const FIELDS = ['walls', 'openings', 'rooms', 'items', 'mep', 'pipes', 'marks', 'texts', 'dims', 'sections', 'views', 'comments'];
 const blankSheet = (no, title) => ({ id: uid(), no, title, ...Object.fromEntries(FIELDS.map(f => [f, []])) });
 function toProject(o) {
   if (o && Array.isArray(o.sheets)) { o.sheets.forEach(sh => FIELDS.forEach(f => { if (!Array.isArray(sh[f])) sh[f] = []; })); if (!o.sheets.length) o.sheets.push(blankSheet('A-01', '平面配置')); return o; }
@@ -1182,7 +1186,7 @@ function flat(pj, tag) {
 }
 let hist = [], fut = [];
 let sel = null, tool = 'select', mode = 'plan', tab = 'plan';
-const L = { dims: true, furn: true, mep: true, pipes: true, notes: true, grid: true, comments: true, lux: false, ceil: false, auto: false, circ: true, mepKinds: null };
+const L = { dims: true, furn: true, mep: true, pipes: true, notes: true, grid: true, comments: true, lux: false, ceil: false, auto: false, circ: true, tiles: false, mepKinds: null };
 const opt = { fx: 'down', wallT: 120, door: 900, win: 1500, furn: 'sofa', mep: 'outlet', pipe: 'cold', pen: '#BC3A3A', penW: 3, textStyle: 'plain', textSize: 170 };
 function load() {
   try {
@@ -1204,7 +1208,7 @@ function undo() { if (!hist.length) return; fut.push(histSnap()); restoreSnap(hi
 function redo() { if (!fut.length) return; hist.push(histSnap()); restoreSnap(fut.pop()); }
 function afterSwap() { if (sel && !selObj()) sel = null; draft = null; changed(); }
 let msel = [], guides = [], marq = null, hud = null;
-const LAYER_OF = { walls: 'walls', openings: 'walls', rooms: 'walls', items: 'furn', mep: 'mep', pipes: 'pipes', texts: 'notes', marks: 'notes', dims: 'dims' };
+const LAYER_OF = { walls: 'walls', openings: 'walls', rooms: 'walls', items: 'furn', mep: 'mep', pipes: 'pipes', texts: 'notes', marks: 'notes', dims: 'dims', sections: 'dims' };
 const locked = type => !!(S.locks && S.locks[LAYER_OF[type]]);
 function updUndo() { $('#undoBtn').disabled = !hist.length; $('#redoBtn').disabled = !fut.length; }
 function syncMats() {
@@ -1316,13 +1320,14 @@ function render(W, H, exporting) {
   drawRooms(px);
   if (L.lux) drawLux(px);
   if (L.ceil) drawCeil(px);
+  if (L.tiles) drawTiles(px);
   if (L.pipes) drawPipes(px);
   drawWalls(); drawFinishes(px); drawOpenings(px);
   if (L.furn) drawItems(px);
   drawRoomLabels(px);
   if (L.mep && L.circ) drawCirc(px);
   if (L.mep) drawMep(px);
-  if (L.dims) { drawDims(px); drawOverall(px); if (L.auto) drawAutoDims(px); }
+  if (L.dims) { drawDims(px); drawOverall(px); if (L.auto) drawAutoDims(px); (S.sections || []).forEach(q => drawSectionMark(q, px, sel?.id === q.id ? COL.sel : '#23241F')); }
   if (L.notes) { drawMarks(px); drawTexts(px); }
   if (!exporting) { if (L.comments) drawComments(px); drawSel(px); drawPeers(px); drawDraft(px); }
 }
@@ -1717,6 +1722,8 @@ function drawDraft(px) {
     const { a, b } = draft; if (!b) return; const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y), w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y);
     C.fillStyle = 'rgba(46,74,55,.08)'; C.fillRect(x, y, w, h); C.strokeStyle = 'rgba(42,42,39,.5)'; C.lineWidth = opt.wallT; C.lineCap = 'square'; C.strokeRect(x, y, w, h); C.lineCap = 'butt';
     txt(`${fmt(w)} × ${fmt(h)}`, x + w / 2, y + h / 2, 12 * px, { weight: 600, color: COL.sel, halo: true });
+  } else if (draft.kind === 'section' && draft.b) {
+    drawSectionMark({ name: '?', x1: draft.a.x, y1: draft.a.y, x2: draft.b.x, y2: draft.b.y, look: 1 }, px, COL.sel);
   } else if (draft.kind === 'dim' && draft.b) {
     dimLine(draft.a.x, draft.a.y, draft.b.x, draft.b.y, px, fmt(Math.hypot(draft.b.x - draft.a.x, draft.b.y - draft.a.y)), COL.sel);
   }
@@ -1750,6 +1757,7 @@ function hit(m) {
   }
   if (L.notes && !locked('marks')) for (const k of [...S.marks].reverse()) if (polyDist(m, k.pts) < Math.max(tol, k.width / 2)) return { type: 'marks', id: k.id };
   if (L.pipes && !locked('pipes')) for (const p of [...S.pipes].reverse()) if (polyDist(m, p.pts) < tol) return { type: 'pipes', id: p.id };
+  if (L.dims && !locked('dims')) for (const q of S.sections || []) if (distSeg(m, q.x1, q.y1, q.x2, q.y2) < tol) return { type: 'sections', id: q.id };
   if (L.dims && !locked('dims')) for (const d of S.dims) if (distSeg(m, d.x1, d.y1, d.x2, d.y2) < tol) return { type: 'dims', id: d.id };
   if (!locked('walls')) for (const w of [...S.walls].reverse()) if (wallDist(m, w) < w.t / 2 + tol * .6) return { type: 'walls', id: w.id };
   if (!locked('rooms')) for (const r of [...S.rooms].reverse()) if (inRoom(r, m.x, m.y)) return { type: 'rooms', id: r.id };
@@ -1796,6 +1804,7 @@ const TOOLS = [
   ['pen', '手繪標記', 'M', '<path d="M4 20l4-1 11-11-3-3L5 16z"/><path d="M14 7l3 3"/>'],
   ['text', '文字', 'T', '<path d="M5 7V5h14v2M12 5v14M9 19h6"/>'],
   ['comment', '留言', 'C', '<path d="M5 5h14v10h-8l-4 4v-4H5z"/><path d="M9 9h6M9 12h4"/>'],
+  ['section', '剖面線', 'Y', '<path d="M4 12h16" stroke-dasharray="4 2"/><path d="M4 7v10M20 7v10M4 7l3 2M20 7l-3 2"/>'],
   ['dim', '尺寸標註', 'K', '<path d="M4 8v8M20 8v8M4 12h16M7 9.5L4 12l3 2.5M17 9.5l3 2.5-3 2.5"/>'],
   ['eraser', '刪除', 'X', '<path d="M8 20h12M4 15l9-9 6 6-7 7H8z"/>']
 ];
@@ -1803,13 +1812,13 @@ const HINTS = {
   select: '點選物件編輯，拖曳空白處框選多個物件，Shift 點選可加選；按住空白鍵或右鍵拖曳平移',
   pan: '拖曳平移圖面，滾輪縮放', wall: '點擊放置牆角，連續點擊畫出牆面，在同一點再點一次結束（按住 Alt 可畫斜牆）',
   sketch: '像在紙上一樣隨手畫牆，放開後自動拉直、對齊直角並接上既有牆角；畫回起點會自動形成房間',
-  room: '拖曳畫出房間，會自動產生四面牆', poly: '依序點出每個牆角，點回第一個角就完成，適合 L 型或斜牆空間', door: '點擊牆面放置門', window: '點擊牆面放置窗',
+  section: '拖曳畫出剖面線，箭頭指向觀看方向，點選後可以查看剖面圖', room: '拖曳畫出房間，會自動產生四面牆', poly: '依序點出每個牆角，點回第一個角就完成，適合 L 型或斜牆空間', door: '點擊牆面放置門', window: '點擊牆面放置窗',
   furn: '從家具庫選擇，再點擊平面放置', mep: '點擊放置點位，可連續放置', pipe: '點擊畫出管線轉折，同一點再點一次結束',
   calib: '在底圖上點兩個已知尺寸的端點，例如標著 4,600 的牆兩端', bgmove: '拖曳移動底圖，對齊已經畫好的牆', elev: '點選要看立面的牆，點在牆的哪一側，就從那一側看過去',
   comment: '點擊圖面放置留言，和家人或設計師討論', pen: '直接在圖面上手繪標記', text: '點擊圖面加入文字，Enter 完成，Shift+Enter 換行', dim: '拖曳量測距離並留下尺寸線', eraser: '點擊或拖過物件即可刪除'
 };
 if (coarse) Object.assign(HINTS, { select: '點選物件編輯，拖曳移動，雙指縮放與平移', wall: '點擊放置牆角，連續點擊畫出牆面，按「完成」結束', pipe: '點擊畫出管線轉折，按「完成」結束', text: '點擊圖面加入文字' });
-const SHORT = { mep: '水電', pen: '手繪', dim: '尺寸', poly: '多邊形', sketch: '草圖' };
+const SHORT = { section: '剖面', mep: '水電', pen: '手繪', dim: '尺寸', poly: '多邊形', sketch: '草圖' };
 const PHONE_MAIN = ['select', 'wall', 'sketch', 'room', 'furn', 'mep'];
 function buildRail() {
   const btn = (t, cls = '') => `<button class="tool${cls}" data-tool="${t[0]}" aria-pressed="false" aria-label="${t[1]}（快速鍵 ${t[2]}）"><svg class="i" viewBox="0 0 24 24">${t[3]}</svg><span class="lbl" aria-hidden="true">${SHORT[t[0]] || t[1]}</span></button>`;
@@ -1969,7 +1978,7 @@ function guideDelta(tg, box, rdx, rdy) {
 function applyDelta(t, o, orig, dx, dy) {
   if (t === 'items' || t === 'mep' || t === 'texts' || t === 'comments') { o.x = orig.x + dx; o.y = orig.y + dy; }
   else if (t === 'rooms') { o.x = orig.x + dx; o.y = orig.y + dy; if (orig.lx != null) { o.lx = orig.lx + dx; o.ly = orig.ly + dy; } if (orig.pts) o.pts = orig.pts.map(([x, y]) => [x + dx, y + dy]); }
-  else if (t === 'walls' || t === 'dims') { o.x1 = orig.x1 + dx; o.y1 = orig.y1 + dy; o.x2 = orig.x2 + dx; o.y2 = orig.y2 + dy; }
+  else if (t === 'walls' || t === 'dims' || t === 'sections') { o.x1 = orig.x1 + dx; o.y1 = orig.y1 + dy; o.x2 = orig.x2 + dx; o.y2 = orig.y2 + dy; }
   else if (t === 'marks' || t === 'pipes') { o.pts = orig.pts.map(([x, y]) => [x + dx, y + dy]); }
 }
 const curList = () => msel.length ? [...msel] : sel ? [sel] : [];
@@ -2189,6 +2198,13 @@ const down = {
     S.comments = S.comments || []; S.comments.push(c); setTool('select');
     if (!sheetUI() && $('#work').classList.contains('no-insp')) setPanel(true);
     select({ type: 'comments', id: c.id }); setTimeout(() => $('#insp [data-ctext]')?.focus(), 60);
+  },
+  section(m) {
+    draft = { kind: 'section', a: snapGrid(m) };
+    act = {
+      move(m2) { draft.b = snap(m2, draft.a, null); draw(); },
+      up() { const { a, b } = draft; draft = null; if (b && Math.hypot(b.x - a.x, b.y - a.y) > 600) { commit(); S.sections = S.sections || []; const used = new Set(S.sections.map(q => q.name)), name = 'ABCDEFGHJKLMNPQRSTUVWXYZ'.split('').find(c => !used.has(c)) || String(S.sections.length + 1); const sc = { id: uid(), name, x1: a.x, y1: a.y, x2: b.x, y2: b.y, look: 1 }; S.sections.push(sc); sel = { type: 'sections', id: sc.id }; setTool('select'); changed(); } else draw(); }
+    };
   },
   dim(m) {
     draft = { kind: 'dim', a: snap(m) };
@@ -2456,6 +2472,7 @@ function renderInspectorBase() {
         <div class="row-btns" style="margin-top:10px"><button class="btn" data-badd="color">${IC.plus}加色票</button><button class="btn" data-badd="photo">${IC.plus}加材料照片</button></div><p class="note">會一起出現在物件規格頁和 3D 預覽的空間視角。</p></div>
       ${ceilPanel(o)}
       <div class="sec"><h3>地坪材質</h3>${matPicker(o.floor, 'floor', FLOORS)}</div>
+      ${tilePanel(o)}
       <div class="sec"><h3>此空間的物件</h3>${S.items.filter(i => roomAt(i.x, i.y) === o).map(i => `<button class="room-row" data-pick="items:${i.id}"><b style="font-weight:500">${esc(i.code)} ${esc(i.name)}</b><span>${i.w}×${i.d}×${i.h}</span></button>`).join('') || '<p class="crumb" style="margin:0">還沒有家具。</p>'}</div>` + actions(false);
   } else if (t === 'mep') {
     const room = roomAt(o.x, o.y), st = statusOf('mep', o), k = MEP[o.kind];
@@ -2481,6 +2498,11 @@ function renderInspectorBase() {
       <h3 style="margin-top:14px">顏色</h3><div class="swatches">${PEN_COLORS.map(([c, n]) => `<button class="sw" data-act="textColor" data-v="${c}" aria-pressed="${o.color === c}"><i style="background:${c}"></i>${n}</button>`).join('')}</div></div>` + actions();
   } else if (t === 'comments') {
     h += commentPanel(o);
+  } else if (t === 'sections') {
+    h += `<div class="sec"><div class="crumb">剖面線</div><div class="big-h"><b>${esc(o.name)}-${esc(o.name)}</b><span>剖面，長 ${fmt(Math.hypot(o.x2 - o.x1, o.y2 - o.y1))} mm</span></div></div>
+      <div class="sec"><div class="f"><label>剖面代號</label><input data-f="name" value="${esc(o.name)}" maxlength="3"></div>
+      <div class="row-btns" style="margin-top:12px"><button class="btn btn-primary" data-act="secView">查看剖面圖</button><button class="btn" data-act="secFlip">翻轉觀看方向</button></div>
+      <p class="note">剖面會切過牆、門窗、天花與樓板，並畫出觀看方向 5 公尺內的家具與櫃體。出圖套組可以勾選「剖面圖」。</p></div>` + actions(false);
   } else if (t === 'dims') {
     h += `<div class="sec"><div class="crumb">尺寸線</div><div class="big-h"><b>${fmt(Math.hypot(o.x2 - o.x1, o.y2 - o.y1))}</b><span>mm</span></div></div>` + actions(false);
   }
@@ -2607,6 +2629,8 @@ insp.addEventListener('click', e => {
   if (!o) return;
   if (a === 'linkMode') { setLinking(linking === o.id ? null : o.id); return; }
   if (a === 'cabEdit') { openCab(o.id); return; }
+  if (a === 'secView') { openSection(o.id); return; }
+  if (a === 'secFlip') { commit(); o.look = -(o.look || 1); changed(); return; }
   if (a === 'stairT') { commit(); o.stair = b.dataset.v === 'u' ? 'u' : undefined; if (o.stair === 'u' && o.w < 1900) { o.w = 2000; o.d = Math.min(o.d, 3000); } changed(); return; }
   commit();
   if (a === 'mat') o.mat = b.dataset.v; if (a === 'floor') o.floor = b.dataset.v; if (a === 'pipeKind') o.kind = b.dataset.v;
@@ -3164,6 +3188,212 @@ function cadToWalls() {
   commit(); let n = 0;
   for (const w of ws) { const a = [Math.round(w.x1), Math.round(w.y1)], b = [Math.round(w.x2), Math.round(w.y2)]; if (S.walls.some(x => sameSeg(x, a, b))) continue; S.walls.push({ id: uid(), x1: a[0], y1: a[1], x2: b[0], y2: b[1], t: clamp(w.t, 60, 400), h: 2800 }); n++; }
   changed(); flash(`已從 CAD 線條建立 ${n} 面牆，牆角接合處請再檢查`);
+}
+
+/* ============ tile layout ============ */
+// room.tile = { w, h (tile size, mm), j (joint), pat: grid | half | third, org: center | corner, rot: 0 | 90 }
+const TILE_SIZES = [[300, 600], [600, 600], [600, 1200], [800, 800], [750, 1500], [1000, 1000], [190, 1200]], TILE_PAT = { grid: '對縫', half: '1/2 錯縫', third: '1/3 錯縫' };
+const tileDef = r => ({ ...{ w: r.floor === 'stone' ? 800 : ['oak', 'teak', 'herring'].includes(r.floor) ? 190 : 600, h: r.floor === 'stone' ? 800 : ['oak', 'teak', 'herring'].includes(r.floor) ? 1200 : 600, j: ['oak', 'teak', 'herring'].includes(r.floor) ? 0 : 2, pat: ['oak', 'teak', 'herring'].includes(r.floor) ? 'third' : 'grid', org: 'center', rot: 0 }, ...(r.tile || {}) });
+function tileGrid(r) {
+  const t = tileDef(r), rot = t.rot === 90, tw = (rot ? t.h : t.w) + t.j, th = (rot ? t.w : t.h) + t.j, x0 = r.x, y0 = r.y, x1 = r.x + r.w, y1 = r.y + r.h, [cx, cy] = roomCenter(r);
+  const ox = t.org === 'center' ? cx - tw / 2 - Math.ceil((cx - tw / 2 - x0) / tw) * tw : x0, oy = t.org === 'center' ? cy - th / 2 - Math.ceil((cy - th / 2 - y0) / th) * th : y0;
+  const shift = t.pat === 'half' ? .5 : t.pat === 'third' ? 1 / 3 : 0, rows = [];
+  let full = 0, cut = 0;
+  for (let y = oy, i = 0; y < y1; y += th, i++) {
+    const sx = ox - (shift ? ((i * shift) % 1) * tw : 0) - tw, xs = [];
+    for (let x = sx; x < x1; x += tw) {
+      if (x + tw <= x0) continue; xs.push(x);
+      const pts = [[x, y], [x + tw, y], [x, y + th], [x + tw, y + th], [x + tw / 2, y + th / 2]], inside = pts.filter(([px2, py2]) => inRoom(r, px2, py2)).length;
+      if (inside === 5) full++; else if (inside > 0 || rpts(r).some(([px2, py2]) => px2 > x && px2 < x + tw && py2 > y && py2 < y + th)) cut++;
+    }
+    rows.push({ y, xs });
+  }
+  return { t, tw, th, rows, full, cut, total: Math.ceil((full + cut) * 1.05) };
+}
+function drawTiles(px) {
+  for (const r of S.rooms) {
+    if (!r.tile) continue; const g = tileGrid(r);
+    C.save(); C.beginPath(); rpts(r).forEach(([x, y], i) => i ? C.lineTo(x, y) : C.moveTo(x, y)); C.closePath(); C.clip();
+    C.strokeStyle = 'rgba(70,80,92,.45)'; C.lineWidth = Math.max(px * .8, g.t.j || px); C.beginPath();
+    for (const row of g.rows) { C.moveTo(r.x - 10, row.y); C.lineTo(r.x + r.w + 10, row.y); for (const x of row.xs) { C.moveTo(x, row.y); C.lineTo(x, row.y + g.th); } }
+    C.stroke(); C.restore();
+    if (Math.min(r.w, r.h) * VV.s > 84) { const [cx, cy] = roomCenter(r); txt(`${g.t.w}×${g.t.h} ${TILE_PAT[g.t.pat]}　整片 ${g.full}、切片 ${g.cut}`, cx, cy + 56 * px, 9.5 * px, { color: '#46607A', weight: 600, halo: true }); }
+  }
+}
+function tilePanel(o) {
+  const t = tileDef(o), on = !!o.tile, g = on ? tileGrid(o) : null;
+  return `<div class="sec"><h3>地坪分割</h3><label class="chk"><input type="checkbox" data-tilef="on" ${on ? 'checked' : ''}>畫出磁磚或地板分割線</label>
+    ${on ? `<div class="fields two" style="margin-top:10px"><div class="f"><label>尺寸</label><select data-tilef="size">${TILE_SIZES.map(([w, h]) => `<option value="${w}x${h}" ${t.w === w && t.h === h ? 'selected' : ''}>${w} × ${h}${w === 190 ? '（木地板）' : ''}</option>`).join('')}</select></div><div class="f"><label>排法</label><select data-tilef="pat">${Object.entries(TILE_PAT).map(([k, v]) => `<option value="${k}" ${t.pat === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div></div>
+      <div class="fields" style="margin-top:10px"><div class="f"><label>起鋪</label><select data-tilef="org"><option value="center" ${t.org === 'center' ? 'selected' : ''}>置中</option><option value="corner" ${t.org === 'corner' ? 'selected' : ''}>從角落</option></select></div><div class="f"><label>方向</label><select data-tilef="rot"><option value="0" ${!t.rot ? 'selected' : ''}>橫向</option><option value="90" ${t.rot ? 'selected' : ''}>直向</option></select></div><div class="f"><label>縫寬</label><div class="unit"><input type="number" data-tilef="j" value="${t.j}" min="0" max="10" step="1"><em>mm</em></div></div></div>
+      <div class="kv" style="margin-top:8px"><span>片數</span><b>整片 ${g.full}、切片 ${g.cut}，備料約 ${g.total} 片</b></div><p class="note">備料含 5% 損耗。置中起鋪可以讓房間兩側的切片寬度一致。</p>` : ''}</div>`;
+}
+insp.addEventListener('change', e => {
+  const t = e.target; if (!t.matches('[data-tilef]')) return; const o = selObj(); if (!o || sel.type !== 'rooms') return; commit(); const k = t.dataset.tilef;
+  if (k === 'on') { if (t.checked) o.tile = { ...tileDef(o) }; else delete o.tile; }
+  else { o.tile = { ...tileDef(o) }; if (k === 'size') { const [w, h] = t.value.split('x').map(Number); o.tile.w = w; o.tile.h = h; } else if (k === 'j') o.tile.j = clamp(+t.value || 0, 0, 10); else if (k === 'rot') o.tile.rot = +t.value; else o.tile[k] = t.value; }
+  if (o.tile && !L.tiles) { L.tiles = true; const cb = $('[data-layer="tiles"]'); if (cb) cb.checked = true; }
+  changed();
+});
+
+/* ============ sections ============ */
+function drawSectionMark(q, px, col) {
+  const Ln = Math.hypot(q.x2 - q.x1, q.y2 - q.y1) || 1, ux = (q.x2 - q.x1) / Ln, uy = (q.y2 - q.y1) / Ln, s = q.look || 1, nx = -uy * s, ny = ux * s;
+  C.strokeStyle = col; C.lineWidth = 1.6 * px; C.setLineDash([16 * px, 4 * px, 3 * px, 4 * px]); line(q.x1, q.y1, q.x2, q.y2); C.setLineDash([]);
+  for (const [x, y] of [[q.x1, q.y1], [q.x2, q.y2]]) {
+    C.lineWidth = 2.4 * px; line(x, y, x + nx * 22 * px, y + ny * 22 * px);
+    C.fillStyle = col; C.beginPath(); C.moveTo(x + nx * 30 * px, y + ny * 30 * px); C.lineTo(x + nx * 18 * px - ux * 6 * px, y + ny * 18 * px - uy * 6 * px); C.lineTo(x + nx * 18 * px + ux * 6 * px, y + ny * 18 * px + uy * 6 * px); C.closePath(); C.fill();
+    txt(q.name, x - ux * 14 * px + nx * 10 * px, y - uy * 14 * px + ny * 10 * px, 13 * px, { weight: 700, color: col, halo: true });
+  }
+}
+function clipLine(P1, u, Ls, poly) {
+  let t0 = 0, t1 = Ls; const n = poly.length;
+  for (let i = 0; i < n; i++) {
+    const [ax, ay] = poly[i], [bx, by] = poly[(i + 1) % n], ex = bx - ax, ey = by - ay, nx = ey, ny = -ex, den = nx * u[0] + ny * u[1], num = nx * (P1[0] - ax) + ny * (P1[1] - ay);
+    const side = Math.sign(nx * (poly[(i + 2) % n][0] - ax) + ny * (poly[(i + 2) % n][1] - ay)) || 1;
+    if (Math.abs(den) < 1e-9) { if (num * side < 0) return null; continue; }
+    const t = -num / den; if (den * side > 0) t0 = Math.max(t0, t); else t1 = Math.min(t1, t);
+    if (t0 > t1) return null;
+  }
+  return [t0, t1];
+}
+function sectionData(q) {
+  const Ls = Math.hypot(q.x2 - q.x1, q.y2 - q.y1), u = [(q.x2 - q.x1) / Ls, (q.y2 - q.y1) / Ls], s = q.look || 1, nv = [-u[1] * s, u[0] * s], P1 = [q.x1, q.y1];
+  const cuts = [];
+  for (const w of wallParts()) {
+    const L2 = Math.hypot(w.x2 - w.x1, w.y2 - w.y1); if (L2 < 1) continue; const wx = (w.x2 - w.x1) / L2, wy = (w.y2 - w.y1) / L2, hx = -wy * w.t / 2, hy = wx * w.t / 2;
+    const poly = [[w.x1 + hx, w.y1 + hy], [w.x2 + hx, w.y2 + hy], [w.x2 - hx, w.y2 - hy], [w.x1 - hx, w.y1 - hy]], iv = clipLine(P1, u, Ls, poly); if (!iv || iv[1] - iv[0] < 1) continue;
+    const tm = (iv[0] + iv[1]) / 2, mx = P1[0] + u[0] * tm, my = P1[1] + u[1] * tm, along = (mx - w.x1) * wx + (my - w.y1) * wy;
+    const op = w.piece ? null : S.openings.find(o => { if (o.wallId !== w.id) return false; const g = opGeom(o); return g && Math.abs(along - g.pos) <= o.w / 2; });
+    cuts.push({ t0: iv[0], t1: iv[1], h: w.h, op });
+  }
+  const runs = []; let cur = null;
+  for (let t = 25; t < Ls; t += 50) {
+    const x = P1[0] + u[0] * t, y = P1[1] + u[1] * t, r = roomAt(x, y), h = r ? ceilAt(x, y) : null, k = r ? r.id + ':' + h : '';
+    if (!cur || cur.k !== k) { cur = { k, r, h, t0: t - 25, t1: t + 25 }; runs.push(cur); } else cur.t1 = t + 25;
+  }
+  const items = [];
+  for (const it of S.items) {
+    const a = it.rot * Math.PI / 180, c = Math.cos(a), sn = Math.sin(a), hw = it.w / 2, hd = it.d / 2;
+    const cs = [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]].map(([x, y]) => [it.x + x * c - y * sn - P1[0], it.y + x * sn + y * c - P1[1]]);
+    const ts = cs.map(([x, y]) => x * u[0] + y * u[1]), ds = cs.map(([x, y]) => x * nv[0] + y * nv[1]), dmin = Math.min(...ds), dmax = Math.max(...ds);
+    if (dmax < 0 || dmin > 5000) continue; const t0 = Math.max(0, Math.min(...ts)), t1 = Math.min(Ls, Math.max(...ts)); if (t1 - t0 < 10) continue;
+    items.push({ it, t0, t1, cut: dmin < 0, d: Math.max(0, dmin) });
+  }
+  items.sort((p, q2) => q2.d - p.d);
+  const lights = S.mep.filter(m => m.kind === 'light').map(m => { const x = m.x - P1[0], y = m.y - P1[1]; return { m, t: x * u[0] + y * u[1], d: x * nv[0] + y * nv[1] }; }).filter(l => l.t > 0 && l.t < Ls && l.d > -400 && l.d < 3000);
+  return { Ls, cuts, runs, items, lights, top: Math.max(2400, ...S.walls.map(w => w.h)) };
+}
+function drawSection(g, q, W, H, fixedS) {
+  const d = sectionData(q), s = fixedS || Math.min((W - 140) / d.Ls, (H - 130) / (d.top + 900)), ox = Math.max(70, (W - d.Ls * s) / 2), oy = Math.min(H - 70, (H + (d.top + 600) * s) / 2 + 10), X = t => ox + t * s, Y = z => oy - (z + 300) * s;
+  const keep = C; C = g; g.save(); g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
+  const R = (t0, z0, t1, z1, fill, stroke, lw = 1) => { const x = X(t0), y = Y(z1), w = (t1 - t0) * s, h = (z1 - z0) * s; if (fill) { g.fillStyle = fill; g.fillRect(x, y, w, h); } if (stroke) { g.strokeStyle = stroke; g.lineWidth = lw; g.strokeRect(x, y, w, h); } };
+  const hatch = (t0, z0, t1, z1) => { g.save(); g.beginPath(); g.rect(X(t0), Y(z1), (t1 - t0) * s, (z1 - z0) * s); g.clip(); g.strokeStyle = 'rgba(35,36,31,.35)'; g.lineWidth = .7; g.beginPath(); for (let k = X(t0) - (z1 - z0) * s; k < X(t1); k += 6) { g.moveTo(k, Y(z0)); g.lineTo(k + (z1 - z0) * s, Y(z1)); } g.stroke(); g.restore(); };
+  // beyond: furniture and cabinets in the viewing direction, light outlines
+  for (const e of d.items) { const z0 = e.it.z || 0; R(e.t0, z0, e.t1, z0 + e.it.h, e.cut ? '#F1EEE7' : '#FAF9F6', e.cut ? '#3A3A36' : '#A7A59C', e.cut ? 1.2 : .8); if ((e.t1 - e.t0) * s > 40) txt(e.it.code, X((e.t0 + e.t1) / 2), Y(z0 + e.it.h / 2), Math.max(9, Math.min(12, s * 90)), { color: '#6B6B62' }); }
+  // slab and roof slab
+  R(0, -150, d.Ls, 0, '#D9D6CE', '#23241F', 1.2); hatch(0, -150, d.Ls, 0);
+  R(0, d.top, d.Ls, d.top + 150, '#D9D6CE', '#23241F', 1.2); hatch(0, d.top, d.Ls, d.top + 150);
+  // ceilings and room names
+  for (const r of d.runs) {
+    if (!r.r) continue; const c = ceilOf(r.r);
+    if (c.type !== 'open') { g.strokeStyle = '#23241F'; g.lineWidth = 2; g.beginPath(); g.moveTo(X(r.t0), Y(r.h)); g.lineTo(X(r.t1), Y(r.h)); g.stroke(); }
+    if ((r.t1 - r.t0) * s > 60 && r.h === Math.max(...d.runs.filter(x => x.r === r.r).map(x => x.h))) {
+      txt(r.r.name, X((r.t0 + r.t1) / 2), Y(1500), Math.max(10, Math.min(14, s * 110)), { weight: 700, color: '#4B4C45', halo: true });
+      const tx = X(r.t0 + Math.min(300, (r.t1 - r.t0) / 4)); g.strokeStyle = '#4B4C45'; g.lineWidth = .8; g.beginPath(); g.moveTo(tx, Y(0)); g.lineTo(tx, Y(r.h)); g.stroke();
+      txt(`CH ${fmt(c.type === 'open' ? d.top : r.h)}`, tx + 4, Y(r.h / 2), Math.max(9, Math.min(12, s * 90)), { align: 'left', color: '#23241F', weight: 600, halo: true });
+    }
+  }
+  // fascia where the ceiling steps, and cove LEDs
+  for (let i = 1; i < d.runs.length; i++) {
+    const a = d.runs[i - 1], b = d.runs[i]; if (!a.r || a.r !== b.r || a.h === b.h) continue; const c = ceilOf(a.r);
+    g.strokeStyle = '#23241F'; g.lineWidth = 2; g.beginPath(); g.moveTo(X(b.t0), Y(a.h)); g.lineTo(X(b.t0), Y(b.h)); g.stroke();
+    if (c.cove) { const up = b.h > a.h, tt = b.t0 + (up ? 100 : -100); g.fillStyle = '#C7772B'; g.beginPath(); g.arc(X(tt), Y(Math.min(a.h, b.h) + 40), Math.max(2, 25 * s), 0, 7); g.fill(); }
+  }
+  for (const l of d.lights) { const h = lightH(l.m); g.fillStyle = '#23241F'; g.fillRect(X(l.t) - Math.max(2, 50 * s), Y(h), Math.max(4, 100 * s), Math.max(2, 25 * s)); }
+  // cut walls
+  for (const c of d.cuts) {
+    const solid = (z0, z1) => { R(c.t0, z0, c.t1, z1, '#2A2A27', '#2A2A27'); };
+    if (!c.op) solid(0, c.h);
+    else if (c.op.type === 'door') solid(c.op.h, c.h);
+    else { solid(0, c.op.sill); solid(c.op.sill + c.op.h, c.h); R(c.t0, c.op.sill, c.t1, c.op.sill + c.op.h, '#E6EEF0', '#4E626C', 1); g.strokeStyle = '#4E626C'; g.beginPath(); g.moveTo(X((c.t0 + c.t1) / 2), Y(c.op.sill)); g.lineTo(X((c.t0 + c.t1) / 2), Y(c.op.sill + c.op.h)); g.stroke(); }
+    if (c.op) txt(c.op.type === 'door' ? `門高 ${fmt(c.op.h)}` : `窗台 ${fmt(c.op.sill)}`, X((c.t0 + c.t1) / 2), Y(c.op.type === 'door' ? c.op.h + 120 : c.op.sill - 140), Math.max(8, Math.min(11, s * 80)), { color: '#4E626C', halo: true });
+  }
+  // horizontal dimension chain under the floor
+  const pts = [...new Set([0, d.Ls, ...d.cuts.flatMap(c => [(c.t0 + c.t1) / 2])].map(v => Math.round(v)))].sort((p, q2) => p - q2), yd = Y(-150) + 26;
+  g.strokeStyle = '#4B4C45'; g.lineWidth = .8;
+  for (let i = 1; i < pts.length; i++) { const a = X(pts[i - 1]), b = X(pts[i]); g.beginPath(); g.moveTo(a, yd); g.lineTo(b, yd); g.moveTo(a, yd - 5); g.lineTo(a, yd + 5); g.moveTo(b, yd - 5); g.lineTo(b, yd + 5); g.stroke(); if (b - a > 26) txt(fmt(pts[i] - pts[i - 1]), (a + b) / 2, yd - 8, Math.max(9, Math.min(11, s * 80)), { color: '#23241F', halo: true }); }
+  const xl = X(0) - 34; g.beginPath(); g.moveTo(xl, Y(0)); g.lineTo(xl, Y(d.top)); g.stroke(); txt(fmt(d.top), xl - 4, Y(d.top / 2), 11, { rot: -Math.PI / 2, color: '#23241F', halo: true });
+  txt(`${q.name}-${q.name} 剖面`, ox, Math.max(26, Y(d.top + 150) - 30), 16, { align: 'left', weight: 700 });
+  g.restore(); C = keep;
+  return d;
+}
+function openSection(id) {
+  const q = (S.sections || []).find(x => x.id === id); if (!q) return;
+  $('#secBody').innerHTML = `<div class="dlg-in"><div class="cab-h"><h2>${esc(q.name)}-${esc(q.name)} 剖面</h2><span>${S.no} ${esc(S.title)}</span></div><canvas id="secCv" style="width:100%;height:min(62vh,520px);display:block;border:1px solid var(--line);border-radius:var(--r-md);margin:12px 0"></canvas>
+    <div class="row-btns" style="justify-content:space-between"><div class="row-btns"><button class="btn" data-sec="flip">翻轉觀看方向</button><button class="btn" data-sec="png">下載 PNG</button></div><button class="btn btn-primary" data-sec="close">關閉</button></div></div>`;
+  $('#secDlg').dataset.id = id; $('#secDlg').showModal(); paintSection();
+}
+function paintSection() {
+  const q = (S.sections || []).find(x => x.id === $('#secDlg').dataset.id), cv2 = $('#secCv'); if (!q || !cv2) return;
+  const r = cv2.getBoundingClientRect(), dpr = Math.min(2, devicePixelRatio || 1); cv2.width = r.width * dpr; cv2.height = r.height * dpr; const g = cv2.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); drawSection(g, q, r.width, r.height);
+}
+$('#secDlg').addEventListener('click', e => {
+  const b = e.target.closest('[data-sec]'); if (!b) { if (e.target === $('#secDlg')) $('#secDlg').close(); return; }
+  const q = (S.sections || []).find(x => x.id === $('#secDlg').dataset.id); if (!q) return;
+  if (b.dataset.sec === 'close') $('#secDlg').close();
+  if (b.dataset.sec === 'flip') { commit(); q.look = -(q.look || 1); changed(); paintSection(); }
+  if (b.dataset.sec === 'png') { const c = document.createElement('canvas'); c.width = 2400; c.height = 1300; drawSection(c.getContext('2d'), q, 2400, 1300); download(c.toDataURL('image/png'), `${P.code}-${S.no}-${q.name}剖面.png`); }
+});
+
+/* ============ standard details (大樣) ============ */
+function detailCeil(g, X, Y, s, c) {
+  const z = v => Y(v), R = (x0, y0, x1, y1, f, st = '#23241F') => { g.fillStyle = f; g.fillRect(X(x0), z(y1), (x1 - x0) * s, (y1 - y0) * s); g.strokeStyle = st; g.lineWidth = 1; g.strokeRect(X(x0), z(y1), (x1 - x0) * s, (y1 - y0) * s); };
+  const drop = c.drop || 300, hi = 700, lo = hi - drop, board = 9;
+  R(-50, hi + 150, 1500, hi + 300, '#D9D6CE'); // slab
+  R(0, hi + 150, 120, hi + 150 + 0.1, '#fff'); // anchor
+  g.strokeStyle = '#6B6B62'; g.lineWidth = 1; for (const x of [200, 900]) { g.beginPath(); g.moveTo(X(x), z(hi + 150)); g.lineTo(X(x), z(hi + board)); g.stroke(); }
+  R(600, hi, 1500, hi + board, '#F4F1EA'); // raised ceiling board
+  R(0, lo, 600, lo + board, '#F4F1EA'); R(600 - board, lo, 600, hi, '#F4F1EA'); // band and fascia
+  R(-60, -200, 0, hi + 150, '#2A2A27'); // wall
+  if (c.cove) { R(600 - board, lo + board, 600 + 90, lo + board + 12, '#F4F1EA'); R(600 + 90 - 12, lo + board, 600 + 90, lo + board + 60, '#F4F1EA'); g.fillStyle = '#C7772B'; g.beginPath(); g.arc(X(600 + 40), z(lo + board + 25), Math.max(2, 12 * s), 0, 7); g.fill(); }
+  const note = (x, y, tx, ty, t) => { g.strokeStyle = '#4B4C45'; g.lineWidth = .8; g.beginPath(); g.moveTo(X(x), z(y)); g.lineTo(X(tx), z(ty)); g.stroke(); txt(t, X(tx) + 4, z(ty), Math.max(9, s * 40), { align: 'left', color: '#23241F', halo: true }); };
+  note(1100, hi + 225, 1150, hi + 420, 'RC 樓板'); note(900, hi + 80, 1150, hi + 90, '吊筋與角材骨架'); note(1250, hi + 4, 1000, hi - 150, '9 mm 矽酸鈣板，批土油漆');
+  note(300, lo + 4, 320, lo - 160, `降板 ${fmt(drop)}，寬 ${fmt(c.band || 600)}`); if (c.cove) note(640, lo + 35, 760, lo - 70, 'LED 燈條，藏於燈槽內');
+  const dimV = (x, a, b) => { g.strokeStyle = '#4B4C45'; g.beginPath(); g.moveTo(X(x), z(a)); g.lineTo(X(x), z(b)); g.stroke(); txt(fmt(b - a), X(x) - 4, z((a + b) / 2), Math.max(9, s * 40), { align: 'right', color: '#23241F' }); };
+  dimV(1640, lo, hi); if (c.cove) dimV(780, lo + board, lo + board + 60);
+}
+function detailFloor(g, X, Y, s, wood) {
+  const z = v => Y(v), R = (x0, y0, x1, y1, f) => { g.fillStyle = f; g.fillRect(X(x0), z(y1), (x1 - x0) * s, (y1 - y0) * s); g.strokeStyle = '#23241F'; g.lineWidth = 1; g.strokeRect(X(x0), z(y1), (x1 - x0) * s, (y1 - y0) * s); };
+  R(-80, -150, 1400, 0, '#D9D6CE');
+  R(-80, 0, 0, 700, '#2A2A27');
+  if (wood) { R(0, 0, 1400, 3, '#E9E6DE'); R(0, 3, 1400, 15, '#C49A6C'); R(0, 15, 12, 95, '#EEEDE8'); }
+  else { R(0, 0, 1400, 30, '#CFCBC1'); for (let x = 0; x < 1400; x += 600) R(x + 2, 30, Math.min(x + 598, 1400), 40, '#E5E2DA'); R(0, 40, 12, 120, '#EEEDE8'); }
+  const note = (x, y, tx, ty, t) => { g.strokeStyle = '#4B4C45'; g.lineWidth = .8; g.beginPath(); g.moveTo(X(x), z(y)); g.lineTo(X(tx), z(ty)); g.stroke(); txt(t, X(tx) + 4, z(ty), Math.max(9, s * 40), { align: 'left', color: '#23241F', halo: true }); };
+  if (wood) { note(600, 9, 700, 260, '12 mm 超耐磨木地板'); note(900, 1, 1000, 180, '3 mm 防潮布'); note(6, 60, 160, 420, '80 mm 踢腳板，矽利康收邊'); }
+  else { note(500, 15, 600, 260, '30 mm 水泥砂漿黏著層'); note(900, 36, 1000, 180, '10 mm 拋光石英磚，縫 2 mm'); note(6, 90, 160, 420, '80 mm 踢腳板'); }
+  note(1200, -75, 1300, -300, 'RC 樓板');
+}
+function detailPage(paper, info) {
+  const pg = newPage(paper), a = drawFrame(pg, { ...info, title: '大樣圖', no: 'DT-01', scale: '' }), g = pg.g, m = v => v * PD, keep = C; C = g;
+  const cove = S.rooms.map(ceilOf).find(c => c.type === 'drop' && c.cove), drop = S.rooms.map(ceilOf).find(c => c.type === 'drop' && !c.cove);
+  const cells = [['天花降板與間接燈槽大樣', (X, Y, s) => detailCeil(g, X, Y, s, cove || { drop: 300, band: 600, cove: true })], ['天花降板大樣', (X, Y, s) => detailCeil(g, X, Y, s, drop || { drop: 250, band: 450, cove: false })], ['地坪與踢腳：磁磚', (X, Y, s) => detailFloor(g, X, Y, s, false)], ['地坪與踢腳：木地板', (X, Y, s) => detailFloor(g, X, Y, s, true)]];
+  const cw = (a.aw - 8) / 2, ch = (a.ah - 8) / 2, ext = [[-100, 1700, -250, 1050], [-100, 1700, -250, 1050], [-120, 1500, -350, 800], [-120, 1500, -350, 800]], used = new Set();
+  cells.forEach(([t, fn], i) => {
+    const x0 = a.ax + 4 + (i % 2) * cw, y0 = a.ay + 4 + Math.floor(i / 2) * ch, [ux0, ux1, vz0, vz1] = ext[i];
+    const sc = [5, 10, 15, 20, 25].find(v => (ux1 - ux0) / v <= cw - 12 && (vz1 - vz0) / v <= ch - 20) || 30, s = PD / sc; used.add(sc);
+    caption(pg, x0 + 2, y0 + 8, t, `1:${sc}`); const ox = m(x0 + 6) - ux0 * s, oy = m(y0 + 14) + vz1 * s;
+    fn(u => ox + u * s, v => oy - v * s, s);
+  });
+  drawFrame(pg, { ...info, title: '大樣圖', no: 'DT-01', scale: [...used].map(v => `1:${v}`).join('、') });
+  C = keep; return pg;
+}
+function sectionPages(sh, paper, startInfo) {
+  return withSheet(sh, () => (S.sections || []).map(q => {
+    const info = { ...startInfo, title: `${q.name}-${q.name} 剖面圖`, no: `${sh.no.replace('A', 'S')}-${q.name}` }, pg = newPage(paper), a = drawFrame(pg, info);
+    const d = sectionData(q), sc = [20, 30, 50, 75, 100, 150].find(v => (d.Ls + 1500) / v <= a.aw - 10 && (d.top + 1400) / v <= a.ah - 14) || 200; info.scale = `1:${sc}`;
+    const W = a.aw * PD, H = (a.ah - 10) * PD, off = document.createElement('canvas'); off.width = W; off.height = H; drawSection(off.getContext('2d'), q, W, H, PD / sc); pg.g.drawImage(off, a.ax * PD, a.ay * PD);
+    drawFrame(pg, info); return pg;
+  }));
 }
 
 /* ============ lighting ============ */
@@ -4641,7 +4871,7 @@ function scaleBar(pg, x, y, scale) {
 }
 function withSheet(sh, fn) {
   const keep = [S, sel, msel, C, VV, DPR, { ...L }, { ...ev }]; S = sh; sel = null; msel = [];
-  Object.assign(L, { dims: true, furn: true, mep: true, pipes: true, notes: true, grid: false, comments: false, lux: false, ceil: false, auto: false, circ: false, mepKinds: null });
+  Object.assign(L, { dims: true, furn: true, mep: true, pipes: true, notes: true, grid: false, comments: false, lux: false, ceil: false, auto: false, circ: false, tiles: false, mepKinds: null });
   try { return fn(); } finally { [S, sel, msel, C, VV, DPR] = keep; Object.assign(L, keep[6]); Object.assign(ev, keep[7]); }
 }
 // ceiling plans keep walls, ceiling heights, lights and switch circuits, and leave out furniture and pipes
@@ -4649,14 +4879,14 @@ const CEIL_VIEW = { furn: false, pipes: false, notes: false, ceil: true, circ: t
 function planPage(sh, paper, info, ceilView, auto) {
   const pg = newPage(paper), a = drawFrame(pg, info);
   withSheet(sh, () => {
-    L.auto = !!auto; if (ceilView) Object.assign(L, CEIL_VIEW);
+    L.auto = !!auto; if (ceilView === 'tile') Object.assign(L, { furn: false, pipes: false, notes: false, mep: false, tiles: true }); else if (ceilView) Object.assign(L, CEIL_VIEW);
     const b = bounds(), need = (sc) => (b.w + 2600) / sc <= a.aw && (b.h + 2600) / sc <= a.ah - 14;
     const sc = [30, 50, 75, 100, 150, 200, 300].find(need) || 400; info.scale = `1:${sc}`;
     const k = PD / sc, cw = a.aw * PD, ch = (a.ah - 14) * PD, off = document.createElement('canvas'); off.width = cw; off.height = ch;
     C = off.getContext('2d'); DPR = 1; VV = { s: k, x: cw / 2 - (b.x + b.w / 2) * k, y: ch / 2 - (b.y + b.h / 2) * k };
     render(cw, ch, true); pg.g.drawImage(off, a.ax * PD, a.ay * PD);
   });
-  drawFrame(pg, info); caption(pg, a.ax + 2, a.ay + a.ah - 4, ceilView ? `${sh.no} 天花平面圖` : `${sh.no} ${sh.title}`, info.scale); scaleBar(pg, a.ax + a.aw - 4 * (1000 / +info.scale.split(':')[1]) - 8, a.ay + a.ah - 8, +info.scale.split(':')[1]);
+  drawFrame(pg, info); caption(pg, a.ax + 2, a.ay + a.ah - 4, ceilView === 'tile' ? `${sh.no} 地坪分割圖` : ceilView ? `${sh.no} 天花平面圖` : `${sh.no} ${sh.title}`, info.scale); scaleBar(pg, a.ax + a.aw - 4 * (1000 / +info.scale.split(':')[1]) - 8, a.ay + a.ah - 8, +info.scale.split(':')[1]);
   return pg;
 }
 function elevPages(sh, paper, startInfo) {
@@ -4782,6 +5012,9 @@ async function buildPdf(opts, progress) {
   if (opts.ceil) sheets.filter(sh => sh.rooms.length).forEach(sh => jobs.push(info => [planPage(sh, opts.paper, { ...info, title: `${sh.no} 天花平面圖`, no: `${sh.no}-RC` }, true, opts.auto)]));
   if (opts.elev) sheets.forEach(sh => jobs.push(info => elevPages(sh, opts.paper, info)));
   if (opts.cab) sheets.forEach(sh => jobs.push(info => cabPages(sh, opts.paper, info)));
+  if (opts.sec) sheets.forEach(sh => jobs.push(info => sectionPages(sh, opts.paper, info)));
+  if (opts.tile) sheets.filter(sh => sh.rooms.some(r => r.tile)).forEach(sh => jobs.push(info => [planPage(sh, opts.paper, { ...info, title: `${sh.no} 地坪分割圖`, no: `${sh.no}-FL` }, 'tile', false)]));
+  if (opts.detail) jobs.push(info => [detailPage(opts.paper, info)]);
   if (opts.spec) jobs.push(info => tablePages(opts.paper, { ...info, title: '物件規格表', no: 'S-01', scale: '無' }, '物件規格表', ['編號', '項目', '空間', '尺寸 W×D×H', '離地', '材質／類型', '備註'], [14, 34, 22, 34, 12, 20, 44], specRows()));
   if (opts.renders) { const rs = await pdfRenders(); rs.forEach((r, i) => jobs.push(info => [renderPage(r, i, opts.paper, info)])); }
   if (opts.est) sheets.filter(sh => sh.walls.length).forEach((sh, i) => jobs.push(info => tablePages(opts.paper, { ...info, title: `估價單 ${sh.no}`, no: `Q-${String(i + 1).padStart(2, '0')}`, scale: '無' }, `估價單：${sh.no} ${sh.title}`, ['工項', '數量', '單位', '單價', '小計', '備註'], [60, 16, 12, 24, 28, 50], estRows(sh))));
@@ -4817,7 +5050,7 @@ function openPdfDlg() {
   $('#pdfBody').innerHTML = `<div class="dlg-in"><h2>輸出出圖套組</h2><p>把 ${n} 張圖面整理成一份 PDF，每頁都有圖框、比例尺與簽名欄，印出時選「實際大小」即符合標示比例。</p>
     <div class="f"><label for="firmIn">事務所或設計師名稱（顯示在圖框）</label><input id="firmIn" value="${esc(P.firm || '')}" placeholder="例如：森林室內設計" maxlength="24"></div>
     <h3>紙張</h3><div class="seg" role="group" aria-label="紙張"><button data-paper="a3" aria-pressed="${(P.paper || 'a3') === 'a3'}">A3 橫式</button><button data-paper="a4" aria-pressed="${P.paper === 'a4'}">A4 橫式</button></div>
-    <h3>內容</h3><div class="pdf-opts">${[['legend', '圖例與符號說明'], ['plan', '平面圖（含水電、標註）'], ['auto', '平面圖加上自動尺寸標註'], ['ceil', '天花平面圖（天花高度、燈具、開關迴路）'], ['elev', '立面圖（有櫃體或門窗的牆）'], ['cab', '系統櫃詳圖與板材裁切清單'], ['renders', '效果圖（渲染相簿）'], ['spec', '物件規格表'], ['est', '估價單']].map(([k, l]) => `<label class="chk"><input type="checkbox" data-pdf="${k}" checked>${l}</label>`).join('')}</div>
+    <h3>內容</h3><div class="pdf-opts">${[['legend', '圖例與符號說明'], ['plan', '平面圖（含水電、標註）'], ['auto', '平面圖加上自動尺寸標註'], ['ceil', '天花平面圖（天花高度、燈具、開關迴路）'], ['elev', '立面圖（有櫃體或門窗的牆）'], ['cab', '系統櫃詳圖與板材裁切清單'], ['sec', '剖面圖（平面上畫的剖面線）'], ['tile', '地坪分割圖'], ['detail', '大樣圖（天花燈槽、地坪收邊）'], ['renders', '效果圖（渲染相簿）'], ['spec', '物件規格表'], ['est', '估價單']].map(([k, l]) => `<label class="chk"><input type="checkbox" data-pdf="${k}" checked>${l}</label>`).join('')}</div>
     <p class="note" id="pdfProg" aria-live="polite"></p>
     <div class="row-btns"><button class="btn btn-primary" id="pdfGo">產生 PDF</button><button class="btn" data-close>取消</button></div></div>`;
   if (!d.open) d.showModal();
