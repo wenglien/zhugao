@@ -1,7 +1,7 @@
 .DS_Store
-.firebase/
 .claude/
-node_modules/
-ios/ZhugaoScan/build/
-ios/ZhugaoScan/*.xcodeproj/xcuserdata/
+.firebase/
 ios/ZhugaoScan/*.xcodeproj/project.xcworkspace/xcuserdata/
+ios/ZhugaoScan/*.xcodeproj/xcuserdata/
+ios/ZhugaoScan/build/
+node_modules/
