@@ -38,6 +38,7 @@
       <div class="proj">
         <div class="proj-name"><span class="code" id="projCode">C06</span><span id="projName"></span></div>
         <small>築稿 空間與施工設計工具</small>
+        <button class="loc" id="locBtn" type="button" aria-haspopup="dialog"><span class="sdot" id="locDot"></span><span id="locTxt"></span><span id="locShort"></span></button>
       </div>
     </div>
     <nav class="tabs" role="tablist" aria-label="工作區">
@@ -222,6 +223,7 @@
 </form></dialog>
 <input type="file" id="matFile" accept="image/*" hidden>
 <dialog class="dlg" id="acctDlg" aria-label="帳號"><div id="acctBody"></div></dialog>
+<dialog class="dlg" id="locDlg" aria-label="儲存位置"><div id="locBody"></div></dialog>
 <dialog class="dlg" id="shareDlg" aria-label="共用與協作"><div id="shareBody"></div></dialog>
 <div class="cloud-ov" id="cloudOv" hidden><div><b>正在載入共用專案…</b><span>第一次開啟需要幾秒鐘</span></div></div>
 

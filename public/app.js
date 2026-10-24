@@ -235,7 +235,7 @@ function load() {
   P = sampleProject(); VERS = [makePrev(P)]; bindSheet();
 }
 let saveT;
-function save() { if (cloud.pid) return; clearTimeout(saveT); scheduleBackup(); saveT = setTimeout(() => { try { localStorage.setItem(KEY, JSON.stringify(P)); localStorage.setItem(KEY + '.v', JSON.stringify(VERS)); } catch (e) { /* ignore */ } }, 300); }
+function save() { if (cloud.pid) return; clearTimeout(saveT); scheduleBackup(); saveT = setTimeout(() => { try { localStorage.setItem(KEY, JSON.stringify(P)); localStorage.setItem(KEY + '.v', JSON.stringify(VERS)); } catch (e) { /* ignore */ } }, 300); updLoc(); }
 const histSnap = () => ({ j: JSON.stringify(P), r: cloud.ops.length });
 function commit() { P.edited = true; P.at = Date.now(); hist.push(histSnap()); if (hist.length > 150) hist.shift(); fut.length = 0; updUndo(); }
 function restoreSnap(e) {
@@ -3647,8 +3647,8 @@ async function fbInit() {
     cloud.authReady = new Promise(res => {
       let first = true;
       A.onAuthStateChanged(cloud.auth, async u => {
-        if (!u) { try { await A.signInAnonymously(cloud.auth); } catch (e) { console.error(e); cloud.authErr = e; if (first) { first = false; res(null); } } return; }
-        cloud.user = u; updAccount(); if (first) { first = false; res(u); } else { fetchBackups(); }
+        if (!u) { try { await A.signInAnonymously(cloud.auth); } catch (e) { console.error(e); cloud.authErr = e; cloud.authKnown = true; updLoc(); if (first) { first = false; res(null); } } return; }
+        cloud.user = u; cloud.authKnown = true; updAccount(); if (first) { first = false; res(u); } else { fetchBackups(); }
       });
     });
     cloud.fs = fs;
@@ -3768,7 +3768,7 @@ function onRemote() {
     cloud.ready = true; cloud.synced = clone(R);
     const act0 = P.active; P = { ...R, active: R.sheets.some(s => s.id === act0) ? act0 : R.sheets[0].id }; bindSheet();
     hist.length = 0; fut.length = 0; sel = null; msel = []; T.vi = -1; dirty3d = true;
-    $('#cloudOv').hidden = true; changed({ remote: true }); V.userMoved = false; fit(); fetchMissingImgs(); rememberRecent(cloud.pid, P.name); setCloudStatus();
+    $('#cloudOv').hidden = true; changed({ remote: true }); V.userMoved = false; fit(); fetchMissingImgs(); rememberRecent(cloud.pid, P.name); rememberShared(); setCloudStatus();
     if (!cloud.me.name) openShare('join');
     return;
   }
@@ -3811,7 +3811,7 @@ function renderPeers() {
 }
 function setCloudStatus() {
   const dot = $('#syncDot'), lbl = $('#shareLbl');
-  if (!cloud.pid) { dot.className = 'sdot'; lbl.textContent = '共用'; return; }
+  updLoc(); if (!cloud.pid) { dot.className = 'sdot'; lbl.textContent = '共用'; return; }
   const [c, t] = cloud.error ? ['off', '同步失敗'] : !navigator.onLine ? ['off', '離線中'] : !cloud.ready || cloud.flushTimer || cloud.pendingRemote || cloud.rootPend || cloud.sheetPend ? ['busy', '同步中'] : ['ok', '已同步'];
   dot.className = 'sdot ' + c; lbl.textContent = t; $('#shareBtn').title = cloud.ready ? `${t}，點擊邀請協作者` : t;
 }
@@ -3822,9 +3822,9 @@ function openShare(kind) { renderShare(kind); const d = $('#shareDlg'); if (!d.o
 function saveMe() { const v = ($('#meName')?.value || '').trim(); cloud.me.name = v || '訪客'; try { localStorage.setItem('zhugao.me', JSON.stringify({ name: cloud.me.name, color: cloud.me.color })); } catch (e) { /* ignore */ } presencePing(true); if (cloud.pid && cloud.user) cloud.mod.updateDoc(cloud.mod.doc(cloud.fs, 'projects', cloud.pid, 'members', cloud.user.uid), { name: cloud.me.name }).catch(() => {}); }
 $('#shareBtn').onclick = () => openShare();
 $('#shareDlg').addEventListener('close', () => { if (cloud.pid && !cloud.me.name) saveMe(); });
-addEventListener('pagehide', () => { flushNow(); if (cloud.pid && cloud.fs && cloud.user) cloud.mod.deleteDoc(cloud.mod.doc(cloud.fs, 'projects', cloud.pid, 'presence', cloud.user.uid)).catch(() => {}); });
-document.addEventListener('visibilitychange', () => { if (document.hidden) flushNow(); else presencePing(true); });
-addEventListener('online', setCloudStatus); addEventListener('offline', setCloudStatus);
+addEventListener('pagehide', () => { flushNow(); if (!cloud.pid) backupAll(); if (cloud.pid && cloud.fs && cloud.user) cloud.mod.deleteDoc(cloud.mod.doc(cloud.fs, 'projects', cloud.pid, 'presence', cloud.user.uid)).catch(() => {}); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) { flushNow(); if (!cloud.pid && bk.timer) backupAll(); } else presencePing(true); });
+addEventListener('online', () => { setCloudStatus(); if (realUser() && !cloud.pid) backupAll(); }); addEventListener('offline', setCloudStatus);
 $('#insp').addEventListener('focusout', () => setTimeout(afterBusy, 0));
 $('#estPage').addEventListener('focusout', () => setTimeout(afterBusy, 0));
 
@@ -3923,14 +3923,25 @@ function renderHome() {
   const curEdited = cur && cur.edited;
   if (!curEdited && !sampleThumb) sampleThumb = thumb(sampleProject());
   const heroImg = curEdited ? thumb(cur, 'cur' + (cur.at || 0)) : sampleThumb;
-  const cloudOnly = realUser() ? (bk.list || []).filter(x => (!cur || x.lid !== cur.lid) && !lib.some(l => l.lid === x.lid)) : [];
-  const card = (o, isCur, cl) => {
+  // one card per project: the newer of this device's copy and the account's copy wins
+  const acct = realUser() ? bk.list || [] : [], byLid = new Map();
+  for (const o of lib) byLid.set(o.lid, { o, dev: true, inAcct: (bk.at[o.lid] || 0) >= (o.at || 0) && acct.some(x => x.lid === o.lid) });
+  for (const x of acct) { if (cur && x.lid === cur.lid) continue; const h = byLid.get(x.lid); if (!h) byLid.set(x.lid, { o: x, cl: true, inAcct: true }); else if ((x.at || 0) > (h.o.at || 0)) byLid.set(x.lid, { o: x, cl: true, dev: true, inAcct: true }); }
+  const curNewer = cur && acct.find(x => x.lid === cur.lid && (x.at || 0) > (cur.at || 0));
+  const where = (inAcct, dev) => inAcct ? `<span class="badge acct" title="存在你的帳號，換裝置登入也看得到">帳號</span>` : `<span class="badge dev" title="${realUser() ? '還沒存到帳號' : '只存在這台裝置的瀏覽器'}">${realUser() ? '尚未存到帳號' : '僅此裝置'}</span>`;
+  const card = (o, isCur, cl, inAcct) => {
     const pj = isCur ? cur : null; let img = '';
     if (isCur) img = thumb(cur, 'cur' + (cur.at || 0)); else { try { img = thumb(toProject(JSON.parse(o.data)), o.lid + o.at); } catch (e) { img = ''; } }
-    return `<article class="pcard">${img ? `<img src="${img}" alt="">` : '<div class="pthumb-empty">空白圖面</div>'}<div class="pcard-b"><b>${esc((pj || o).name)}${cl ? ' <span class="badge">雲端</span>' : ''}</b><span>${esc((pj || o).code)}，${(pj ? pj.sheets.length : o.sheets) || 1} 張圖面${(pj ? pj.at : o.at) ? `，${ago(pj ? pj.at : o.at)}` : ''}</span></div>
-      <div class="pcard-a">${isCur ? '<button class="btn btn-primary" data-home="continue">繼續編輯</button>' : `<button class="btn" data-home="${cl ? 'copen' : 'open'}" data-lid="${o.lid}">開啟</button><button class="icon-btn" data-home="del" data-lid="${o.lid}" aria-label="刪除 ${esc(o.name)}">${IC.del}</button>`}</div></article>`;
+    const curAcct = isCur && realUser() && !bk.big.has(cur.lid) && (bk.at[cur.lid] || 0) >= (cur.at || 0);
+    return `<article class="pcard">${img ? `<img src="${img}" alt="">` : '<div class="pthumb-empty">空白圖面</div>'}<div class="pcard-b"><b>${esc((pj || o).name)}</b><span>${esc((pj || o).code)}，${(pj ? pj.sheets.length : o.sheets) || 1} 張圖面${(pj ? pj.at : o.at) ? `，${ago(pj ? pj.at : o.at)}` : ''}</span><span>${where(isCur ? curAcct : inAcct)}${curNewer && isCur ? ' 其他裝置有較新的版本' : ''}</span></div>
+      <div class="pcard-a">${isCur ? (curNewer ? `<button class="btn btn-primary" data-home="copen" data-lid="${cur.lid}">開啟最新版本</button><button class="btn" data-home="continue">這台的版本</button>` : '<button class="btn btn-primary" data-home="continue">繼續編輯</button>') : `<button class="btn" data-home="${cl ? 'copen' : 'open'}" data-lid="${o.lid}">開啟</button><button class="icon-btn" data-home="del" data-lid="${o.lid}" aria-label="刪除 ${esc(o.name)}">${IC.del}</button>`}</div></article>`;
   };
-  const projects = (curEdited ? [card(null, true)] : []).concat(lib.map(o => card(o, false)), cloudOnly.map(o => card(o, false, true)));
+  const rest = [...byLid.values()].sort((a, b) => (b.o.at || 0) - (a.o.at || 0));
+  const projects = (curEdited ? [card(null, true)] : []).concat(rest.map(h => card(h.o, false, h.cl, h.inAcct)));
+  const shared = [...(realUser() && bk.shared ? bk.shared : [])]; for (const r of recent) if (!shared.some(x => x.pid === r.pid)) shared.push(r);
+  const homeNote = realUser()
+    ? `已登入 ${esc(cloud.user.email || cloud.user.displayName || '')}。專案會自動存到你的帳號，在任何裝置登入都看得到；這台裝置也保留一份，離線時照樣能編輯。`
+    : '目前專案只存在這台裝置的瀏覽器，清除瀏覽資料或換裝置就看不到。<button class="link" data-home="login">登入</button>後會自動存到你的帳號，換手機或電腦也能接著做。';
   $('#homeIn').innerHTML = `
     <section class="hero">
       <div class="hero-copy">
@@ -3949,10 +3960,10 @@ function renderHome() {
         <div class="start"><svg class="i" viewBox="0 0 24 24"><path d="M3 20h18M5 20V9l7-5 7 5v11"/><path d="M10 20v-6h4v6"/></svg><b>看範例住宅</b><p>30 坪三房改兩房，已經配好家具、水電、3D 視角與估價，適合先熟悉操作。</p><button class="btn" data-home="sample">開啟範例</button></div>
       </div>
     </section>
-    <section class="hsec"><h2>我的專案</h2><p class="note hnote">${realUser() ? `已登入 ${esc(cloud.user.email || cloud.user.displayName || '')}，專案會自動備份到雲端，換裝置登入也看得到。` : '目前專案只存在這台裝置的瀏覽器。<button class="link" data-home="login">登入</button>後會自動備份到雲端，換手機或電腦也能接著做。'}</p>${projects.length ? `<div class="pgrid">${projects.join('')}</div>` : '<p class="note">還沒有專案，從上面選一種方式開始吧。</p>'}</section>
-    ${recent.length ? `<section class="hsec"><h2>共用專案</h2><div class="shared">${recent.map(r => `<a class="btn" href="?p=${esc(r.pid)}">${esc(r.name || '未命名專案')}<small>${ago(r.at)}</small></a>`).join('')}</div></section>` : ''}
+    <section class="hsec"><h2>我的專案</h2><p class="note hnote">${homeNote}</p>${projects.length ? `<div class="pgrid">${projects.join('')}</div>` : '<p class="note">還沒有專案，從上面選一種方式開始吧。</p>'}</section>
+    ${shared.length ? `<section class="hsec"><h2>共用專案</h2><p class="note hnote">存在築稿的雲端，和成員即時同步。${realUser() ? '已記在你的帳號，換裝置登入也找得到。' : '登入後會記在你的帳號，換裝置也找得到。'}</p><div class="shared">${shared.map(r => `<a class="btn" href="?p=${esc(r.pid)}">${esc(r.name || '未命名專案')}<small>${r.role ? esc(ROLE_NAME[r.role] || '') + '・' : ''}${ago(r.at)}</small></a>`).join('')}</div></section>` : ''}
     <section class="hsec"><h2>五個步驟完成一個家</h2><ol class="steps">${STEPS.map(([t, d], i) => `<li><span>${i + 1}</span><b>${t}</b><p>${d}</p></li>`).join('')}</ol></section>
-    <footer class="hfoot"><button class="btn btn-ghost" data-home="tour">重新看一次使用教學</button><p>專案存在這台裝置的瀏覽器裡；換裝置或清除瀏覽資料前，請用「匯出 → 儲存專案檔」備份，或開啟共用存到雲端。</p><p class="legal"><a href="privacy.html" target="_blank" rel="noopener">隱私權政策</a><a href="terms.html" target="_blank" rel="noopener">使用條款</a></p></footer>`;
+    <footer class="hfoot"><button class="btn btn-ghost" data-home="tour">重新看一次使用教學</button><p>${realUser() ? '專案存在你的帳號，並在這台裝置保留一份副本。也可以用「匯出 → 儲存專案檔」自己另外保存。' : '專案目前只存在這台裝置的瀏覽器裡；換裝置或清除瀏覽資料前，請先登入存到帳號，或用「匯出 → 儲存專案檔」備份。'}</p><p class="legal"><a href="privacy.html" target="_blank" rel="noopener">隱私權政策</a><a href="terms.html" target="_blank" rel="noopener">使用條款</a></p></footer>`;
 }
 $('#homePage').addEventListener('click', e => {
   const b = e.target.closest('[data-home]'); if (!b) return; const k = b.dataset.home;
@@ -3966,11 +3977,13 @@ $('#homePage').addEventListener('click', e => {
   if (k === 'scan') { if (!archiveCurrent()) return; useProject(toProject({ name: '掃描專案', code: 'C01' }), []); P.edited = true; P.at = Date.now(); enterEditor(); $('#fileIn').click(); }
   if (k === 'sample') { if (!archiveCurrent()) return; const pj = sampleProject(); useProject(pj, [makePrev(pj)]); enterEditor(); }
   if (k === 'open') {
-    const l = libRead(), o = l.find(x => x.lid === b.dataset.lid); if (!o) return; if (!archiveCurrent()) return;
+    const l = libRead(), o = l.find(x => x.lid === b.dataset.lid); if (!o) return;
+    if ((bk.list || []).some(x => x.lid === o.lid && (x.at || 0) > (o.at || 0))) { openCloudProject(o.lid); return; }
+    if (!archiveCurrent()) return;
     let pj, vers; try { pj = toProject(JSON.parse(o.data)); vers = JSON.parse(o.vers || '[]'); } catch (er) { alert('這個專案的資料損毀，無法開啟。'); return; }
     libWrite(libRead().filter(x => x.lid !== o.lid)); useProject(pj, vers); enterEditor();
   }
-  if (k === 'del') { const o = libRead().find(x => x.lid === b.dataset.lid) || (bk.list || []).find(x => x.lid === b.dataset.lid); if (!o || !confirm(`刪除「${o.name}」？${realUser() ? '雲端備份也會一起刪除，' : ''}刪除後無法復原。`)) return; libWrite(libRead().filter(x => x.lid !== o.lid)); deleteBackup(o.lid).then(renderHome); renderHome(); }
+  if (k === 'del') { const o = libRead().find(x => x.lid === b.dataset.lid) || (bk.list || []).find(x => x.lid === b.dataset.lid); if (!o || !confirm(`刪除「${o.name}」？${realUser() ? '這台裝置和你帳號裡的專案都會刪除，' : ''}刪除後無法復原。`)) return; libWrite(libRead().filter(x => x.lid !== o.lid)); deleteBackup(o.lid).then(renderHome); renderHome(); }
   if (k === 'copen') openCloudProject(b.dataset.lid);
   if (k === 'login') openAcct();
   if (k === 'tour') { try { localStorage.removeItem('zhugao.tour'); } catch (er) { /* ignore */ } enterEditor(); }
@@ -4316,15 +4329,16 @@ function updAccount() {
   const u = cloud.user, b = $('#acctBtn'); if (!b) return;
   if (realUser()) { const n = (u.displayName || u.email || '?').trim(); b.innerHTML = u.photoURL ? `<img src="${esc(u.photoURL)}" alt="" referrerpolicy="no-referrer">` : `<i class="av" style="background:${COL.forest}">${esc(n.slice(0, 1).toUpperCase())}</i>`; b.title = `已登入：${u.email || n}`; }
   else { b.innerHTML = '<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/></svg>'; b.title = '登入'; }
-  b.setAttribute('aria-label', b.title);
+  b.setAttribute('aria-label', b.title); updLoc();
 }
 function renderAcct(msg) {
   const u = cloud.user, body = realUser()
     ? `<h2>你的帳號</h2><div class="person"><i class="av" style="background:${COL.forest}">${esc((u.displayName || u.email || '?').slice(0, 1).toUpperCase())}</i><div><b>${esc(u.displayName || '已登入')}</b><span class="sub">${esc(u.email || '')}</span></div></div>
-       <div class="kv"><span>雲端備份</span><b id="bkStat">${esc(cloud.bkText || '已開啟')}</b></div><p class="note">專案會自動備份到雲端，在其他手機或電腦用同一個帳號登入就能看到。</p>
-       <div class="row-btns"><button class="btn" data-ac="backup">立即備份</button><button class="btn" data-ac="signout">登出</button><button class="btn" data-ac="close">關閉</button></div>
+       <div class="kv"><span>存在帳號的專案</span><b>${bk.list ? `${bk.list.length} 個` : '讀取中…'}</b></div><div class="kv"><span>共用專案</span><b>${bk.shared ? `${bk.shared.length} 個` : '讀取中…'}</b></div><div class="kv"><span>最近一次儲存</span><b>${bk.savedAt ? ago(bk.savedAt) : '尚未儲存'}</b></div>
+       <p class="note">你的專案會自動存到帳號，在其他手機、平板或電腦用同一個帳號登入，首頁「我的專案」就會出現。這台裝置也會保留一份，離線時照樣能編輯。</p>
+       <div class="row-btns"><button class="btn" data-ac="backup">立即同步</button><button class="btn" data-ac="signout">登出</button><button class="btn" data-ac="close">關閉</button></div>
        <p class="note legal">需要刪除帳號與雲端資料，請參考<a href="privacy.html" target="_blank" rel="noopener">隱私權政策</a>。</p>`
-    : `<h2>登入築稿</h2><p>${esc(msg || '登入後，專案會自動備份到雲端，換手機或電腦也能接著做；建立共用專案時，也能設定每個人的權限。')}</p>
+    : `<h2>登入築稿</h2><p>${esc(msg || '登入後，專案會自動存到你的帳號，換手機或電腦也能接著做；建立共用專案時，也能設定每個人的權限。')}</p>
        <button class="btn btn-primary wide" data-ac="google"><svg class="i" viewBox="0 0 24 24"><path d="M20 12.2c0-.6-.1-1.2-.2-1.7H12v3.3h4.5a3.9 3.9 0 0 1-1.7 2.5v2h2.7c1.6-1.5 2.5-3.6 2.5-6.1z"/><path d="M12 20.5c2.3 0 4.2-.8 5.5-2.1l-2.7-2a5 5 0 0 1-7.5-2.7H4.5v2.1A8.5 8.5 0 0 0 12 20.5z"/><path d="M7.3 13.7a5 5 0 0 1 0-3.4V8.2H4.5a8.5 8.5 0 0 0 0 7.6z"/><path d="M12 6.9c1.3 0 2.5.4 3.4 1.3l2.4-2.4A8.5 8.5 0 0 0 4.5 8.2l2.8 2.1A5 5 0 0 1 12 6.9z"/></svg>使用 Google 帳號登入</button>
        <div class="or">或用 Email 登入，不需要密碼</div>
        <div class="linkrow"><input id="acctEmail" type="email" placeholder="you@example.com" autocomplete="email" aria-label="Email"><button class="btn" data-ac="email">寄送登入連結</button></div>
@@ -4336,9 +4350,8 @@ const authMsg = e => ({ 'auth/operation-not-allowed': '這個登入方式還沒�
 async function afterSignIn() {
   cloud.user = cloud.auth.currentUser; updAccount();
   if (!cloud.me.name && cloud.user.displayName) { cloud.me.name = cloud.user.displayName.slice(0, 16); try { localStorage.setItem('zhugao.me', JSON.stringify({ name: cloud.me.name, color: cloud.me.color })); } catch (e) { /* ignore */ } }
-  renderAcct(); fetchBackups().then(() => backupAll());
+  renderAcct(); fetchBackups().then(() => backupAll()).then(n => { renderAcct(); if (tab === 'home') renderHome(); flash(n ? `已登入，這台裝置的 ${n} 個專案已存到你的帳號` : '已登入，專案會自動存到你的帳號'); }); rememberShared();
   if (cloud.afterLogin === 'share') { cloud.afterLogin = null; $('#acctDlg').close(); openShare(); }
-  flash('已登入，專案會自動備份到雲端');
 }
 $('#acctBtn').onclick = () => openAcct();
 $('#acctDlg').addEventListener('click', async e => {
@@ -4360,7 +4373,7 @@ $('#acctDlg').addEventListener('click', async e => {
     catch (er) { msg(authMsg(er)); }
   }
   if (k === 'backup') { await backupAll(true); renderAcct(); }
-  if (k === 'signout') { if (cloud.pid) leaveCloud(); bk.list = null; bk.at = {}; await A.signOut(cloud.auth); $('#acctDlg').close(); flash('已登出'); if (tab === 'home') renderHome(); }
+  if (k === 'signout') { if (cloud.pid) leaveCloud(); bk.list = null; bk.shared = null; bk.at = {}; bk.savedAt = 0; await A.signOut(cloud.auth); $('#acctDlg').close(); flash('已登出'); if (tab === 'home') renderHome(); }
 });
 async function handleEmailLink() {
   const A = cloud.A; if (!A.isSignInWithEmailLink(cloud.auth, location.href)) return;
@@ -4376,39 +4389,106 @@ async function handleEmailLink() {
   history.replaceState(null, '', location.pathname + (keep ? `?p=${keep}` : ''));
 }
 
-/* personal cloud backup */
-const bk = { list: null, at: {}, timer: null, imgs: new Set() };
+/* projects saved to the account: users/{uid}/projects holds every personal project, users/{uid}/shared lists the shared ones you joined */
+const bk = { list: null, shared: null, at: {}, timer: null, run: 0, err: false, big: new Set(), imgs: new Set() };
 async function fetchBackups() {
-  if (!realUser()) { bk.list = null; return; }
-  try { const s = await cloud.mod.getDocs(cloud.mod.collection(cloud.fs, 'users', cloud.user.uid, 'projects')); bk.list = s.docs.map(d => ({ lid: d.id, ...d.data() })); bk.at = Object.fromEntries(bk.list.map(x => [x.lid, x.at || 0])); }
-  catch (e) { console.error(e); }
-  if (tab === 'home') renderHome();
+  if (!realUser()) { bk.list = null; bk.shared = null; updLoc(); return; }
+  const { collection, getDocs } = cloud.mod, me = cloud.user.uid;
+  try { const s = await getDocs(collection(cloud.fs, 'users', me, 'projects')); bk.list = s.docs.map(d => ({ lid: d.id, ...d.data() })); bk.at = Object.fromEntries(bk.list.map(x => [x.lid, x.at || 0])); bk.err = false; }
+  catch (e) { console.error(e); bk.err = true; }
+  try { const s = await getDocs(collection(cloud.fs, 'users', me, 'shared')); bk.shared = s.docs.map(d => d.data()).sort((a, b) => (b.at || 0) - (a.at || 0)); } catch (e) { bk.shared = null; }
+  updLoc(); if (tab === 'home') renderHome();
 }
-function scheduleBackup() { if (!realUser() || cloud.pid) return; clearTimeout(bk.timer); bk.timer = setTimeout(() => backupAll(), 4000); }
+function scheduleBackup() { if (!realUser() || cloud.pid) return; clearTimeout(bk.timer); bk.timer = setTimeout(() => { bk.timer = null; backupAll(); }, 1500); }
 async function backupAll(manual) {
-  if (!realUser()) return; const { doc, setDoc } = cloud.mod, me = cloud.user.uid; let n = 0;
+  if (!realUser()) return 0; clearTimeout(bk.timer); bk.timer = null;
+  const { doc, setDoc } = cloud.mod, me = cloud.user.uid; let n = 0, failed = false;
   const entries = [];
   if (!cloud.pid && P.edited) { P.lid = P.lid || uid(); entries.push({ lid: P.lid, name: P.name, code: P.code, at: P.at || Date.now(), sheets: P.sheets.length, data: JSON.stringify(P), vers: JSON.stringify(VERS) }); }
   entries.push(...libRead());
-  for (const e of entries) {
-    if ((bk.at[e.lid] || 0) >= (e.at || 0)) continue;
-    if ((e.data || '').length + (e.vers || '').length > 950000) { flash(`「${e.name}」太大，無法備份到雲端，請改用專案檔備份`); continue; }
-    try {
-      await setDoc(doc(cloud.fs, 'users', me, 'projects', e.lid), { lid: e.lid, name: e.name, code: e.code, at: e.at || Date.now(), sheets: e.sheets || 1, data: e.data, vers: e.vers || '[]', updatedAt: Date.now() });
-      bk.at[e.lid] = e.at || 0; n++;
-      for (const id of refImgs(toProject(JSON.parse(e.data)))) if (!bk.imgs.has(id) && IMGS[id] && IMGS[id].length < 1040000) { await setDoc(doc(cloud.fs, 'users', me, 'images', id), { d: IMGS[id] }); bk.imgs.add(id); }
-    } catch (er) { console.error(er); }
-  }
-  const d = new Date(); cloud.bkText = `${Object.keys(bk.at).length} 個專案已備份，${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  const el = $('#bkStat'); if (el) el.textContent = cloud.bkText;
-  if (manual) flash(n ? `已備份 ${n} 個專案` : '所有專案都已是最新備份');
+  bk.run++; updLoc();
+  try {
+    for (const e of entries) {
+      if ((bk.at[e.lid] || 0) >= (e.at || 0)) continue;
+      if ((e.data || '').length + (e.vers || '').length > 950000) { if (!bk.big.has(e.lid)) flash(`「${e.name}」太大，無法存到帳號，請改用「儲存專案檔」備份`); bk.big.add(e.lid); continue; }
+      bk.big.delete(e.lid);
+      try {
+        const row = { lid: e.lid, name: e.name, code: e.code, at: e.at || Date.now(), sheets: e.sheets || 1, data: e.data, vers: e.vers || '[]', updatedAt: Date.now() };
+        await setDoc(doc(cloud.fs, 'users', me, 'projects', e.lid), row);
+        bk.at[e.lid] = row.at; n++;
+        if (bk.list) { bk.list = bk.list.filter(x => x.lid !== e.lid); bk.list.push(row); }
+        for (const id of refImgs(toProject(JSON.parse(e.data)))) if (!bk.imgs.has(id) && IMGS[id] && IMGS[id].length < 1040000) { await setDoc(doc(cloud.fs, 'users', me, 'images', id), { d: IMGS[id] }); bk.imgs.add(id); }
+      } catch (er) { console.error(er); failed = true; }
+    }
+  } finally { bk.run--; }
+  bk.err = failed; bk.savedAt = Date.now(); clearTimeout(bk.retry); if (failed) bk.retry = setTimeout(() => backupAll(), 15000); updLoc(); if (n && tab === 'home') renderHome();
+  if (manual) flash(failed ? '有專案沒有存到帳號，請確認網路連線後再試一次' : n ? `已把 ${n} 個專案存到帳號` : '所有專案都已存在帳號裡');
+  return n;
 }
 async function openCloudProject(lid) {
   const o = (bk.list || []).find(x => x.lid === lid); if (!o || !archiveCurrent()) return;
-  let pj, vers; try { pj = toProject(JSON.parse(o.data)); vers = JSON.parse(o.vers || '[]'); } catch (e) { alert('這個雲端備份的資料損毀，無法開啟。'); return; }
+  let pj, vers; try { pj = toProject(JSON.parse(o.data)); vers = JSON.parse(o.vers || '[]'); } catch (e) { alert('帳號裡這個專案的資料損毀，無法開啟。'); return; }
   for (const id of refImgs(pj)) if (!IMGS[id]) { try { const s = await cloud.mod.getDoc(cloud.mod.doc(cloud.fs, 'users', cloud.user.uid, 'images', id)); if (s.exists()) IMGS[id] = s.data().d; } catch (e) { /* ignore */ } }
-  saveImgs(); useProject(pj, vers); P.edited = true; enterEditor();
+  // the account copy replaces any older copy kept on this device
+  libWrite(libRead().filter(x => x.lid !== lid));
+  saveImgs(); useProject(pj, vers); P.edited = true; P.lid = lid; P.at = o.at; enterEditor();
 }
+function rememberShared() {
+  if (!realUser() || !cloud.pid) return;
+  const row = { pid: cloud.pid, name: P.name, role: cloud.role || 'viewer', at: Date.now() };
+  bk.shared = [row, ...(bk.shared || []).filter(x => x.pid !== row.pid)];
+  cloud.mod.setDoc(cloud.mod.doc(cloud.fs, 'users', cloud.user.uid, 'shared', cloud.pid), row).catch(() => {});
+}
+
+/* where this project is saved: the chip under the project name and its dialog */
+function locInfo() {
+  if (cloud.pid) {
+    const [d, t] = cloud.error ? ['off', '同步失敗'] : !navigator.onLine ? ['off', '離線中，連線後同步'] : !cloud.ready || cloud.flushTimer || cloud.pendingRemote || cloud.rootPend || cloud.sheetPend ? ['busy', '同步中…'] : ['ok', '已同步到雲端'];
+    return { k: 'shared', d, t: `共用專案・${t}`, s: d === 'ok' ? '共用已同步' : d === 'busy' ? '同步中' : '未同步' };
+  }
+  if (!P.edited) return { k: 'none', d: 'dev', t: '尚未修改，還沒儲存', s: '未儲存' };
+  if (!cloud.authKnown) return { k: 'wait', d: 'busy', t: '確認儲存位置…', s: '確認中' };
+  if (!realUser()) return { k: 'device', d: 'dev', t: '只存在這台裝置', s: '僅此裝置' };
+  if (bk.big.has(P.lid)) return { k: 'big', d: 'off', t: '專案太大，只存在這台裝置', s: '僅此裝置' };
+  if (!navigator.onLine) return { k: 'offline', d: 'off', t: '離線中，連線後存到帳號', s: '離線中' };
+  if (bk.run || (bk.at[P.lid] || 0) < (P.at || 0)) return { k: 'saving', d: 'busy', t: bk.err ? '無法存到帳號，重試中…' : '正在存到帳號…', s: '儲存中' };
+  return { k: 'acct', d: 'ok', t: `已存到帳號・${ago(P.at) || '剛剛'}`, s: '已存帳號' };
+}
+function updLoc() {
+  const b = $('#locBtn'); if (!b || !P) return; const i = locInfo();
+  $('#locDot').className = 'sdot ' + i.d; $('#locTxt').textContent = i.t; $('#locShort').textContent = i.s; b.title = `儲存位置：${i.t}`; b.setAttribute('aria-label', b.title);
+  if ($('#locDlg').open) renderLoc();
+}
+setInterval(updLoc, 30000);
+function renderLoc() {
+  const i = locInfo(), u = cloud.user, who = realUser() ? esc(u.email || u.displayName || '你的帳號') : '';
+  const row = (on, dot, title, text, btns = '') => `<div class="locrow ${on ? '' : 'off'}"><i class="sdot ${dot}"></i><b>${title}</b><span>${text}</span>${btns ? `<div class="row-btns">${btns}</div>` : ''}</div>`;
+  let rows;
+  if (cloud.pid) {
+    const n = (cloud.members || []).length;
+    rows = row(true, i.d, '雲端共用專案', `存在築稿的雲端，${n ? `${n} 位成員` : '所有成員'}即時看到同一份。你的權限是「${esc(ROLE_NAME[cloud.role] || '檢視')}」。${realUser() ? `已記在 ${who} 的帳號，換裝置登入也找得到。` : ''}`, `<button class="btn" data-loc="share">成員與權限</button>`)
+      + row(true, 'dev', '這台裝置', '離線時的修改會先暫存在瀏覽器，恢復連線後自動同步。');
+  } else {
+    const dev = row(P.edited, P.edited ? 'ok' : 'dev', '這台裝置的瀏覽器', P.edited ? '每次修改都會自動存在這台裝置，不需要按儲存。清除瀏覽資料或換裝置就看不到。' : '這個專案還沒有修改，開始編輯後就會自動儲存。');
+    const acct = !realUser()
+      ? row(false, 'dev', '你的帳號', '還沒登入。登入後專案會自動存到你的帳號，在其他手機、平板或電腦登入就能接著做。', `<button class="btn btn-primary" data-loc="login">登入並存到帳號</button>`)
+      : row(i.k === 'acct', i.d, `你的帳號（${who}）`, i.k === 'acct' ? `已存到帳號，最後修改於 ${ago(P.at) || '剛剛'}。用同一個帳號登入其他裝置，在首頁「我的專案」就會看到。` : i.k === 'big' ? '這個專案超過帳號的單一專案容量（約 1 MB），通常是匯入的照片太大。請改用專案檔備份。' : i.k === 'offline' ? '目前離線，修改先存在這台裝置，恢復連線後會自動存到帳號。' : i.k === 'none' ? '開始編輯後就會自動存到帳號。' : '正在把最新的修改存到帳號。', i.k === 'acct' || i.k === 'none' ? '' : `<button class="btn" data-loc="sync">立即存到帳號</button>`);
+    rows = dev + acct;
+  }
+  $('#locBody').innerHTML = `<div class="dlg-in"><h2>這個專案存在哪裡</h2><p class="note">${esc(P.name)}・${esc(P.code)}</p><div class="locs">${rows}</div>
+    <p class="note sm">也可以下載專案檔自己保存，之後用「匯入」開啟。</p>
+    <div class="row-btns"><button class="btn" data-loc="file">下載專案檔</button><button class="btn" data-loc="close">關閉</button></div></div>`;
+}
+$('#locBtn').onclick = () => { renderLoc(); $('#locDlg').showModal(); };
+$('#locDlg').addEventListener('click', async e => {
+  if (e.target === $('#locDlg')) { $('#locDlg').close(); return; }
+  const b = e.target.closest('[data-loc]'); if (!b) return; const k = b.dataset.loc;
+  if (k === 'close') $('#locDlg').close();
+  if (k === 'login') { $('#locDlg').close(); openAcct('登入後，這台裝置上的專案會自動存到你的帳號，換手機或電腦也能接著做。'); }
+  if (k === 'sync') { b.disabled = true; await backupAll(true); renderLoc(); }
+  if (k === 'file') { $('#locDlg').close(); $('[data-exp="json"]').click(); }
+  if (k === 'share') { $('#locDlg').close(); openShare(); }
+});
 async function deleteBackup(lid) { if (!realUser()) return; try { await cloud.mod.deleteDoc(cloud.mod.doc(cloud.fs, 'users', cloud.user.uid, 'projects', lid)); } catch (e) { /* ignore */ } bk.list = (bk.list || []).filter(x => x.lid !== lid); delete bk.at[lid]; }
 
 /* sharing (replaces the link-only version) */
@@ -4678,6 +4758,6 @@ load(); loadImgs(); buildRail(); buildLib(); renderRoomChips();
 { let pn = '1'; try { pn = localStorage.getItem('zhugao.panel') ?? '1'; } catch (e) { /* ignore */ } if (pn === '0') $('#work').classList.add('no-insp'), $$('[data-panel]').forEach(b => b.setAttribute('aria-pressed', 'false')); }
 new ResizeObserver(resizePlan).observe($('#canvasBox'));
 setTool('select'); changed(); updCount();
-{ const qs = new URLSearchParams(location.search), qp = qs.get('p'); updAccount(); fbInit().then(() => cloud.authReady).then(async u => { if (!u) return; flushErr(); await handleEmailLink(); fetchBackups(); }).catch(e => console.error(e)); if (qp && qp.length >= 20) { $('#cloudOv').hidden = false; connect(qp, qs.get('i')).catch(() => { $('#cloudOv').innerHTML = `<div><b>無法載入雲端元件</b><span>請確認網路連線後重新整理頁面。</span><a class="btn" href="${location.pathname}">回到我的專案</a></div>`; }); } else setTab('home'); }
+{ const qs = new URLSearchParams(location.search), qp = qs.get('p'); updAccount(); fbInit().then(() => cloud.authReady).then(async u => { if (!u) return; flushErr(); await handleEmailLink(); fetchBackups(); }).catch(e => { console.error(e); cloud.authKnown = true; updLoc(); }); if (qp && qp.length >= 20) { $('#cloudOv').hidden = false; connect(qp, qs.get('i')).catch(() => { $('#cloudOv').innerHTML = `<div><b>無法載入雲端元件</b><span>請確認網路連線後重新整理頁面。</span><a class="btn" href="${location.pathname}">回到我的專案</a></div>`; }); } else setTab('home'); }
 requestAnimationFrame(() => { resizePlan(); fit(); });
 document.fonts?.ready.then(draw);

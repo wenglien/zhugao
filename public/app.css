@@ -51,6 +51,24 @@ svg.i.s{width:16px;height:16px}
 .proj-name span{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .proj-name .code{flex:none;font-stretch:82%;letter-spacing:.06em}
 .proj small{display:block;color:var(--muted);font-size:var(--t-xs);line-height:1.4;margin-top:1px}
+body:not(.at-home) .proj small,.at-home .loc{display:none}
+.loc{display:flex;align-items:center;gap:6px;max-width:100%;margin:2px 0 0 -7px;padding:1px 9px 1px 7px;border:1px solid transparent;border-radius:999px;background:none;color:var(--muted);font:inherit;font-size:var(--t-xs);line-height:1.6;white-space:nowrap;cursor:pointer}
+.loc:hover,.loc:focus-visible{background:var(--paper);border-color:var(--line);color:var(--ink-2)}
+.loc #locTxt{overflow:hidden;text-overflow:ellipsis}
+.loc #locShort{display:none}
+.loc .sdot{display:block}
+.sdot.dev{background:transparent;box-shadow:inset 0 0 0 1.5px var(--muted)}
+.locs{display:flex;flex-direction:column;gap:10px;margin:14px 0 4px}
+.locrow{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 12px;align-items:start;padding:12px 14px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--sheet)}
+.locrow .sdot{display:block;margin-top:7px}
+.locrow b{font-weight:600}
+.locrow span{grid-column:2;font-size:var(--t-sm);color:var(--ink-2);line-height:1.6}
+.locrow .row-btns{grid-column:2;margin-top:6px}
+.locrow.off{background:var(--paper)}
+.locrow.off b{color:var(--ink-2)}
+.badge.acct{background:#E6EFE4;border-color:#C8D9C3;color:#2E5A3A}
+.badge.dev{background:#F5EEDC;border-color:#E6D7AE;color:#6E5112}
+.badge.share{background:#E4ECF2;border-color:#C5D5E2;color:#2C4A63}
 .tabs{display:flex;align-items:stretch;gap:2px}
 .tab{display:flex;align-items:center;justify-content:center;padding:0 16px;color:var(--ink-2);border-bottom:2.5px solid transparent;margin-bottom:-1px;white-space:nowrap}
 .tab:hover{color:var(--ink);background:var(--paper)}
@@ -635,6 +653,7 @@ button.tr:hover{background:#F6F6F1}
   .tab{flex:1;padding:11px 4px}
   .mark{width:34px;height:34px}
   .proj small,.hide-sm{display:none}
+  .loc{margin-left:0;padding:0;gap:5px}.loc #locTxt{display:none}.loc #locShort{display:inline}
   .peers i:nth-child(n+3){display:none}
   .share-btn{padding:0 10px}
   .proj-name{font-size:15px}
