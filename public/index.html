@@ -322,6 +322,8 @@ svg.i.s{width:16px;height:16px}
 .pt-grid .seg{flex-wrap:wrap}
 .pt-bar{height:6px;border-radius:3px;background:var(--line);overflow:hidden;margin-top:10px}.pt-bar i{display:block;height:100%;width:0;background:var(--forest);transition:width .3s}
 .dlg .btn .i{width:16px;height:16px}
+.pt-chip{position:absolute;left:50%;top:14px;transform:translateX(-50%);z-index:6;background:var(--ink);color:#fff;border-radius:999px;padding:8px 16px;font-size:var(--t-sm);box-shadow:var(--shadow)}
+.pt-chip.done{background:var(--forest)}
 .rgal{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .rthumb{display:flex;flex-direction:column;gap:4px;text-align:left;font-size:var(--t-xs);color:var(--ink-2);min-width:0}
 .rthumb img{width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:8px;border:1px solid var(--line);background:#15191B}
@@ -922,6 +924,7 @@ button.tr:hover{background:#F6F6F1}
             </div>
           </div>
           <div class="toast" id="toast3d" aria-live="polite"></div>
+          <button class="pt-chip" id="ptChip" hidden></button>
           <div class="board3d" id="board3d" hidden></div>
           <div class="walkpad" id="walkpad" hidden>
             <button data-walk="f" class="w-f" aria-label="前進"><svg class="i" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></button>
@@ -3607,7 +3610,7 @@ insp.addEventListener('change', e => { const t = e.target; if (t.matches('[data-
 /* ============ photoreal renders ============ */
 // Path tracing runs on this device's GPU; finished renders go to the project's album (IndexedDB locally, Firestore for shared projects).
 const SPARK = '<svg class="i" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></svg>';
-const PTQ = { size: [[1280, 720], [1920, 1080], [2560, 1440]], spp: [[48, '快速預覽'], [160, '提案品質'], [500, '精緻']] };
+const PTQ = { size: [[1280, 720], [1920, 1080], [2560, 1440]], spp: [[40, '快速預覽', .5, 3], [140, '提案品質', .75, 4], [500, '精緻', 1, 6]] };
 const ptOpt = { size: 1, spp: 1 };
 let ptJob = null;
 const RDB = {};
@@ -3643,7 +3646,7 @@ async function openPt() {
   $('#ptBody').innerHTML = `<div class="dlg-in"><h2>照片級渲染</h2><p>用路徑追蹤計算光線反彈、柔和陰影和真實反射，效果接近相機實拍。會沿用目前的視角、燈光與材質。</p>
     <div class="pt-stage"><img src="${renderShot()}" alt="目前視角"></div>
     <div class="pt-grid"><div><h3>尺寸</h3>${seg('size', PTQ.size.map(([w, h]) => [0, `${w} × ${h}`]), ptOpt.size)}</div><div><h3>品質</h3>${seg('spp', PTQ.spp.map(([, l]) => [0, l]), ptOpt.spp)}</div><div><h3>時段</h3>${seg('tod', Object.entries(TOD).map(([k, v]) => [k, v.name]), T.tod)}</div></div>
-    <p class="note">在這台裝置的顯示卡上計算，不會額外收費。${coarse ? '手機與平板較慢，提案品質可能需要 5 分鐘以上，可以先用快速預覽確認構圖。' : '提案品質在一般筆電約需 2 到 4 分鐘，尺寸越大越久。'}完成後可存到渲染相簿，也能放進出圖 PDF。</p>
+    <p class="note">在這台裝置的顯示卡上計算，不會額外收費。${coarse ? '手機與平板較慢，可以先用快速預覽確認構圖。' : '快速預覽約 20 秒，提案品質約 1 分鐘，尺寸越大越久。'}開始後可以關掉這個視窗繼續工作，完成時會通知你。完成後可存到渲染相簿，也能放進出圖 PDF。</p>
     <div class="row-btns"><button class="btn btn-primary" data-pt="go">${SPARK}開始渲染</button><button class="btn" data-pt="close">取消</button></div></div>`;
   if (!$('#ptDlg').open) $('#ptDlg').showModal();
 }
@@ -3669,6 +3672,7 @@ async function runPt() {
   }
   const { canvas, r, pt } = PTR;
   r.setSize(w, h, false); r.toneMappingExposure = (T.tod === 'day' ? .7 : TOD[T.tod].exp) * 2 ** T.ev; $('#ptCv').appendChild(canvas);
+  { const q = PTQ.spp[ptOpt.spp]; pt.renderScale = q[2]; pt.bounces = q[3]; }
   const fine0 = T.fine; T.fine = true; T.ptOn = true; build3d();
   const cam = T.cam.clone(); cam.aspect = w / h; cam.updateProjectionMatrix(); const inside = cam.position.y < (T.ceilH || 2800) / 1000;
   const scene = T.scene, saved = { env: scene.environment, bg: scene.background, ei: scene.environmentIntensity, bi: scene.backgroundIntensity };
@@ -3678,11 +3682,13 @@ async function runPt() {
   // at dusk and night the ceiling closes the room so fixtures bounce off it; by day it lets skylight in, and from above it is hidden
   // fixture glow meshes are tiny emitters that bounce rays rarely hit, which shows up as fireflies; their analytic lights already carry the light
   const glows = []; T.root.traverse(o => { if (o.isMesh && o.material.userData?.glow) { glows.push([o.material, o.material.emissiveIntensity]); o.material.emissiveIntensity = 0; } });
+  // the tracer picks one light at random per bounce; in daylight the fixtures add almost nothing but would starve the sun of samples
+  const hidden = []; if (T.tod === 'day') T.root.traverse(o => { if (o.isLight && o !== T.sun && !o.isHemisphereLight && o.visible) { hidden.push(o); o.visible = false; } });
   const ceilM = T.ceils?.children[0]?.material, side0 = ceilM?.side;
   if (T.ceils) T.ceils.visible = inside; if (ceilM && inside && T.tod !== 'day') ceilM.side = THREE.DoubleSide;
-  const cleanup = () => { canvas.remove(); glows.forEach(([m, v]) => { m.emissiveIntensity = v; }); sky.dispose(); Object.assign(scene, { environment: saved.env, background: saved.bg }); scene.environmentIntensity = saved.ei; scene.backgroundIntensity = saved.bi; if (ceilM) ceilM.side = side0; if (T.ceils) T.ceils.visible = true; T.fine = fine0; T.ptOn = false; dirty3d = true; job.done = true; };
+  const cleanup = () => { canvas.remove(); glows.forEach(([m, v]) => { m.emissiveIntensity = v; }); hidden.forEach(o => { o.visible = true; }); sky.dispose(); Object.assign(scene, { environment: saved.env, background: saved.bg }); scene.environmentIntensity = saved.ei; scene.backgroundIntensity = saved.bi; if (ceilM) ceilM.side = side0; if (T.ceils) T.ceils.visible = true; T.fine = fine0; T.ptOn = false; dirty3d = true; job.done = true; };
   // edge-aware smoothing of the accumulated image removes the leftover grain on walls lit only by bounce light
-  const denoise = () => { if (!PTR.dq) PTR.dq = new FSQ(new mod.DenoiseMaterial({ sigma: 2.6, threshold: .09, kSigma: 1 })); PTR.dq.material.map = pt.target.texture; r.setRenderTarget(null); r.clear(); PTR.dq.render(r); };
+  const denoise = () => { if (!PTR.dq) PTR.dq = new FSQ(new mod.DenoiseMaterial({ sigma: 3.5, threshold: .12, kSigma: 1.5 })); PTR.dq.material.map = pt.target.texture; r.setRenderTarget(null); r.clear(); PTR.dq.render(r); };
   const broken = () => { cleanup(); try { pt.dispose(); r.dispose(); } catch (e) { /* context already gone */ } PTR = null; ptFail('顯示卡中斷了這次渲染，可能是畫面太大或記憶體不足。可以再試一次，或改用較小的尺寸。'); };
   try {
     ptMsg('正在等待材質照片…'); await Promise.all([...texLoads]);
@@ -3698,14 +3704,17 @@ async function runPt() {
     try { pt.renderSample(); fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0); gl.flush(); } catch (e) { console.error(e); broken(); return; }
     const n = pt.samples, k = Math.min(1, n / spp), el = (performance.now() - t0) / 1000, left = k > .02 ? el / k - el : 0;
     $('#ptBar') && ($('#ptBar').style.width = (k * 100).toFixed(1) + '%');
+    ptChip(n < .01 ? '照片級渲染準備中' : `照片級渲染 ${Math.round(k * 100)}%`);
     ptMsg(n < .01 ? '正在編譯光線追蹤程式，第一次約需 10 到 30 秒…' : `已完成 ${Math.floor(n)} / ${spp} 次取樣${left ? `，約剩 ${left > 90 ? Math.ceil(left / 60) + ' 分鐘' : Math.ceil(left) + ' 秒'}` : ''}`);
-    if (n >= spp || (job.stop && n >= 1)) { if (fence) { gl.deleteSync(fence); fence = null; } if (PTR?.bad || gl.isContextLost() || isBlack(canvas)) { broken(); return; } ptMsg('正在降噪…'); denoise(); const full = canvas.toDataURL('image/jpeg', .92); cleanup(); ptResult(job, full); return; }
+    if (n >= spp || (job.stop && n >= 1)) { if (fence) { gl.deleteSync(fence); fence = null; } if (PTR?.bad || gl.isContextLost() || isBlack(canvas)) { broken(); return; } ptMsg('正在降噪…'); denoise(); const full = canvas.toDataURL('image/jpeg', .92); cleanup(); ptResult(job, full); ptChip($('#ptDlg').open ? '' : '渲染完成，點此查看', true); if (!$('#ptDlg').open) flash('照片級渲染完成'); return; }
     setTimeout(step, n < .01 ? 60 : 0);
   };
   setTimeout(step, 4);
 }
 function isBlack(src) { const c = document.createElement('canvas'); c.width = 48; c.height = 27; const g = c.getContext('2d'); g.drawImage(src, 0, 0, 48, 27); const d = g.getImageData(0, 0, 48, 27).data; for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] > 6) return false; return true; }
 function thumbOf(url, W = 360) { return loadImg(url).then(im => { const c = document.createElement('canvas'); c.width = W; c.height = Math.round(W * im.naturalHeight / im.naturalWidth); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); return c.toDataURL('image/jpeg', .8); }); }
+// the render keeps going when the dialog is closed; a chip on the 3D view shows progress and reopens it
+function ptChip(text, done) { const c = $('#ptChip'); if (!c) return; c.hidden = !text || $('#ptDlg').open; c.textContent = text || ''; c.classList.toggle('done', !!done); }
 function ptResult(job, url) {
   job.url = url; const name = T.vi >= 0 ? S.views[T.vi].name : $('#viewCard b')?.textContent || '3D 視角';
   $('#ptBody').innerHTML = `<div class="dlg-in"><h2>渲染完成</h2><div class="pt-stage"><img src="${url}" alt="渲染結果"></div>
@@ -3736,7 +3745,7 @@ async function viewRender(id) {
   const d = await renderFull(r).catch(() => null); if (d && $('#rvImg')) $('#rvImg').src = d;
 }
 $('#ptDlg').addEventListener('click', async e => {
-  if (e.target === $('#ptDlg') && !(ptJob && !ptJob.done && !ptJob.url)) { $('#ptDlg').close(); return; }
+  if (e.target === $('#ptDlg')) { $('#ptDlg').close(); return; }
   const sb = e.target.closest('.seg[data-g] button');
   if (sb) { const g = sb.parentElement.dataset.g; if (g === 'tod') { setTod(sb.dataset.v); build3d(); const im = $('#ptBody .pt-stage img'); setTimeout(() => { if (im) im.src = renderShot(); }, 60); } else ptOpt[g] = +sb.dataset.v; $$(`#ptDlg .seg[data-g="${g}"] button`).forEach(b => b.setAttribute('aria-pressed', b === sb)); return; }
   const b = e.target.closest('[data-pt]'); if (!b) return; const a = b.dataset.pt;
@@ -3755,7 +3764,8 @@ $('#ptDlg').addEventListener('click', async e => {
     GAL.list = (GAL.list || []).filter(x => x.id !== id); $('#ptDlg').close(); if (mode === '3d') renderInspector();
   }
 });
-$('#ptDlg').addEventListener('cancel', e => { if (ptJob && !ptJob.done && !ptJob.url) e.preventDefault(); });
+$('#ptDlg').addEventListener('close', () => { if (ptJob && !ptJob.done) { ptChip('照片級渲染進行中'); flash('渲染會在背景繼續，完成時會通知你'); } });
+$('#ptChip').onclick = () => { $('#ptChip').hidden = true; $('#ptDlg').showModal(); };
 insp.addEventListener('click', e => { const b = e.target.closest('[data-rid],[data-pt="open"]'); if (!b) return; if (b.dataset.rid) viewRender(b.dataset.rid); else openPt(); });
 $('#ptBtn').onclick = openPt;
 
