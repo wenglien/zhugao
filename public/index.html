@@ -1319,6 +1319,7 @@ function render(W, H, exporting) {
   if (L.grid && !exporting) drawGrid(W, H, px);
   drawRooms(px);
   if (L.lux) drawLux(px);
+  if (S.level) drawStairWells(px);
   if (L.ceil) drawCeil(px);
   if (L.tiles) drawTiles(px);
   if (L.pipes) drawPipes(px);
@@ -1383,7 +1384,12 @@ function wallParts() {
   const out = [];
   for (const w of S.walls) {
     if (!w.arc) { out.push(w); continue; }
-    const p = wallPts(w); for (let i = 1; i < p.length; i++) out.push({ ...w, x1: p[i - 1][0], y1: p[i - 1][1], x2: p[i][0], y2: p[i][1], ext1: i === 1, ext2: i === p.length - 1, piece: true });
+    const p = wallPts(w), ops = S.openings.filter(o => o.wallId === w.id).map(o => ({ o, g: opGeom(o) })).filter(q => q.g); let s0 = 0;
+    for (let i = 1; i < p.length; i++) {
+      const len = Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1]), s1 = s0 + len, pops = [];
+      for (const { o, g } of ops) { const a = Math.max(s0, g.pos - o.w / 2), b = Math.min(s1, g.pos + o.w / 2); if (b - a > 1) pops.push({ ...o, w: b - a, pos: (a + b) / 2 - s0, noLeaf: true }); }
+      out.push({ ...w, x1: p[i - 1][0], y1: p[i - 1][1], x2: p[i][0], y2: p[i][1], ext1: i === 1, ext2: i === p.length - 1, piece: true, pops }); s0 = s1;
+    }
   }
   return out;
 }
@@ -1403,8 +1409,22 @@ function drawWalls() {
   for (const w of S.walls) { C.lineWidth = w.t; if (w.arc) { C.lineCap = 'butt'; C.lineJoin = 'round'; C.beginPath(); wallPts(w).forEach(([x, y], i) => i ? C.lineTo(x, y) : C.moveTo(x, y)); C.stroke(); C.lineCap = 'square'; } else line(w.x1, w.y1, w.x2, w.y2); }
   C.lineCap = 'butt';
 }
+function arcParam(w) {
+  const a = arcGeo(w); if (!a) return null;
+  const wrap = v => ((v % (2 * Math.PI)) + 3 * Math.PI) % (2 * Math.PI) - Math.PI, a1 = Math.atan2(w.y1 - a.cy, w.x1 - a.cx);
+  let d = wrap(Math.atan2(w.y2 - a.cy, w.x2 - a.cx) - a1); const dm = wrap(Math.atan2(a.mid.y - a.cy, a.mid.x - a.cx) - a1);
+  if (Math.sign(dm) !== Math.sign(d) || Math.abs(dm) > Math.abs(d)) d += d > 0 ? -2 * Math.PI : 2 * Math.PI;
+  return { ...a, a1, d, wrap };
+}
+// distance along a wall (arc length for arc walls) of the point nearest to m
+function wallPosAt(w, m) {
+  const p = arcParam(w); if (!p) { const L = Math.hypot(w.x2 - w.x1, w.y2 - w.y1) || 1; return (m.x - w.x1) * (w.x2 - w.x1) / L + (m.y - w.y1) * (w.y2 - w.y1) / L; }
+  const f = clamp(p.wrap(Math.atan2(m.y - p.cy, m.x - p.cx) - p.a1) / p.d, 0, 1); return f * p.len;
+}
 function opGeom(o) {
   const w = wallById(o.wallId); if (!w) return null;
+  const p = arcParam(w);
+  if (p) { const pos = clamp(o.pos, o.w / 2, Math.max(o.w / 2, p.len - o.w / 2)), t = p.a1 + p.d * pos / p.len, sg = Math.sign(p.d), ux = -Math.sin(t) * sg, uy = Math.cos(t) * sg; return { w, L: p.len, ux, uy, nx: -uy, ny: ux, cx: p.cx + p.R * Math.cos(t), cy: p.cy + p.R * Math.sin(t), pos }; }
   const L = Math.hypot(w.x2 - w.x1, w.y2 - w.y1) || 1, ux = (w.x2 - w.x1) / L, uy = (w.y2 - w.y1) / L;
   const pos = clamp(o.pos, o.w / 2, Math.max(o.w / 2, L - o.w / 2));
   return { w, L, ux, uy, nx: -uy, ny: ux, cx: w.x1 + ux * pos, cy: w.y1 + uy * pos, pos };
@@ -1475,6 +1495,22 @@ function drawStair(it, px) {
   const half = it.w / 2, ly = y0 + g.land; line(0, ly, 0, -y0); line(x0, ly, -x0, ly);
   for (let i = 1; i < g.n1; i++) { const y = -y0 - i * g.tread; line(x0, y, 0, y); line(0, y, -x0, y); }
   arrow(x0 + half / 2, -y0 - g.tread / 2, ly + 40); arrow(-x0 - half / 2, ly + 40, -y0 - g.tread / 2); txt('上', x0 + half / 2, -y0 - g.tread * 1.4, 11 * px, { weight: 700, halo: true });
+}
+// stairs on the floor directly below this one cut an opening through this floor
+function stairWells(sh = S) {
+  if (!sh.level) return []; const z = sh.level.z || 0, out = [];
+  for (const lo of P.sheets) {
+    if (!lo.level || lo === sh || Math.abs((lo.level.z || 0) + (lo.level.fh || 3200) - z) > 50) continue;
+    for (const it of lo.items) if (it.kind === 'stair') { const a = it.rot * Math.PI / 180, c = Math.cos(a), s = Math.sin(a), hw = it.w / 2, hd = it.d / 2; out.push([[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]].map(([x, y]) => [it.x + x * c - y * s, it.y + x * s + y * c])); }
+  }
+  return out;
+}
+function drawStairWells(px) {
+  for (const q of stairWells()) {
+    C.strokeStyle = '#3A3A36'; C.lineWidth = 1.3 * px; C.setLineDash([8 * px, 4 * px]); C.beginPath(); q.forEach(([x, y], i) => i ? C.lineTo(x, y) : C.moveTo(x, y)); C.closePath(); C.stroke(); C.setLineDash([]);
+    C.lineWidth = px; line(q[0][0], q[0][1], q[2][0], q[2][1]); line(q[1][0], q[1][1], q[3][0], q[3][1]);
+    txt('梯井開口', (q[0][0] + q[2][0]) / 2, (q[0][1] + q[2][1]) / 2, 11 * px, { weight: 700, halo: true });
+  }
 }
 function stairInsp(o) {
   const g = stairGeo(o), ok = 2 * g.rise + g.tread >= 590 && 2 * g.rise + g.tread <= 660 && g.rise <= 200;
@@ -1666,7 +1702,7 @@ function drawSelOne(o, t, px, single) {
     }
   } else if (t === 'walls') {
     C.setLineDash([]); C.lineWidth = 2 * px; if (o.arc) { C.beginPath(); wallPts(o).forEach(([x, y], i) => i ? C.lineTo(x, y) : C.moveTo(x, y)); C.stroke(); } else line(o.x1, o.y1, o.x2, o.y2); handle(o.x1, o.y1, px); handle(o.x2, o.y2, px);
-    if (!S.openings.some(q => q.wallId === o.id)) { const mp = wallMid(o), r = 6 * px; C.fillStyle = '#fff'; C.strokeStyle = COL.sel; C.lineWidth = 1.5 * px; C.beginPath(); C.moveTo(mp.x, mp.y - r); C.lineTo(mp.x + r, mp.y); C.lineTo(mp.x, mp.y + r); C.lineTo(mp.x - r, mp.y); C.closePath(); C.fill(); C.stroke(); }
+    { const mp = wallMid(o), r = 6 * px; C.fillStyle = '#fff'; C.strokeStyle = COL.sel; C.lineWidth = 1.5 * px; C.beginPath(); C.moveTo(mp.x, mp.y - r); C.lineTo(mp.x + r, mp.y); C.lineTo(mp.x, mp.y + r); C.lineTo(mp.x - r, mp.y); C.closePath(); C.fill(); C.stroke(); }
     if (o.arc) { const mp = wallMid(o); txt(`弧長 ${fmt(wallLen(o))}`, mp.x, mp.y - o.t / 2 - 22 * px, 10.5 * px, { weight: 600, color: COL.sel, halo: true }); } else {
     const Ln = Math.hypot(o.x2 - o.x1, o.y2 - o.y1);
     const ux = (o.x2 - o.x1) / Ln, uy = (o.y2 - o.y1) / Ln, off = o.t / 2 + 16 * px;
@@ -2086,7 +2122,7 @@ const down = {
     if (o && sel.type === 'items' && !locked('items') && !readOnly()) { const hh = itemHandles(o, 1 / V.s).find(q => Math.hypot(m.x - q.x, m.y - q.y) < (coarse ? 15 : 8) / V.s); if (hh) { startItemHandle(o, hh, p); return; } }
     if (o && sel.type === 'walls' && !readOnly()) {
       for (const e of [1, 2]) if (Math.hypot(m.x - o['x' + e], m.y - o['y' + e]) < 9 / V.s) { startEndpointDrag(o, e, p); return; }
-      { const mp = wallMid(o); if (!S.openings.some(q => q.wallId === o.id) && Math.hypot(m.x - mp.x, m.y - mp.y) < (coarse ? 16 : 10) / V.s) { startBend(o, p); return; } }
+      { const mp = wallMid(o); if (Math.hypot(m.x - mp.x, m.y - mp.y) < (coarse ? 16 : 10) / V.s) { startBend(o, p); return; } }
     }
     const h = hit(m), shift = e && e.shiftKey;
     if (readOnly() || e && e.pointerType === 'touch' && !(h && (sel?.id === h.id || msel.some(q => q.id === h.id)))) {
@@ -2243,10 +2279,8 @@ const down = {
 function sameSeg(w, a, b) { const eq = (x, y, p) => Math.abs(x - p[0]) < 1 && Math.abs(y - p[1]) < 1; return (eq(w.x1, w.y1, a) && eq(w.x2, w.y2, b)) || (eq(w.x1, w.y1, b) && eq(w.x2, w.y2, a)); }
 function placeOpening(m, type) {
   const w = nearestWall(m); if (!w) { flash('請點在牆面上'); return; }
-  if (w.arc) { flash('弧形牆目前不能加門窗，請先把拱高改成 0'); return; }
-  const Ln = Math.hypot(w.x2 - w.x1, w.y2 - w.y1), ux = (w.x2 - w.x1) / Ln, uy = (w.y2 - w.y1) / Ln;
-  const width = Math.min(type === 'door' ? opt.door : opt.win, Ln - 100);
-  const pos = Math.round(clamp((m.x - w.x1) * ux + (m.y - w.y1) * uy, width / 2, Ln - width / 2) / 10) * 10;
+  const Ln = wallLen(w), width = Math.min(type === 'door' ? opt.door : opt.win, Ln - 100);
+  const pos = Math.round(clamp(wallPosAt(w, m), width / 2, Ln - width / 2) / 10) * 10;
   commit(); const o = { id: uid(), wallId: w.id, type, pos, w: width, h: type === 'door' ? 2100 : 1300, sill: type === 'window' ? 900 : 0, side: 1, hinge: 1 };
   S.openings.push(o); sel = { type: 'openings', id: o.id }; changed();
 }
@@ -2262,7 +2296,7 @@ function startMove(h, m, p) {
       const { dx, dy } = useG ? guideDelta(tg, box, m2.x - m.x, m2.y - m.y) : { dx: Math.round((m2.x - m.x) / GRID) * GRID, dy: Math.round((m2.y - m.y) / GRID) * GRID };
       if (t !== 'openings') applyDelta(t, o, orig, dx, dy);
       if (t === 'walls') linkOrig.forEach(l => { l.w['x' + l.e] = l.x + dx; l.w['y' + l.e] = l.y + dy; });
-      if (t === 'openings') { const g = opGeom(o); o.pos = Math.round(clamp((m2.x - g.w.x1) * g.ux + (m2.y - g.w.y1) * g.uy, o.w / 2, g.L - o.w / 2) / 10) * 10; }
+      if (t === 'openings') { const g = opGeom(o); o.pos = Math.round(clamp(wallPosAt(g.w, m2), o.w / 2, g.L - o.w / 2) / 10) * 10; }
       draw(); dirty3d = true;
     },
     up() { guides = []; if (started) changed(); else ensureVisible(); }
@@ -2454,7 +2488,7 @@ function renderInspectorBase() {
     h += `<div class="sec"><div class="crumb">牆面</div><div class="big-h"><b>${fmt(Ln)}</b><span>mm 長，中心線量測</span></div></div>
       <div class="sec"><h3>尺寸</h3><div class="fields">${numF(o.arc ? '弦長' : '長度', 'len', Ln)}${numF('厚度', 't', o.t)}${numF('高度', 'h', o.h)}</div>
         <div class="fields two" style="margin-top:10px">${numF('弧形拱高', 'arc', o.arc || 0, 'mm', 50)}${o.arc ? `<div class="f"><label>弧長</label><div class="ro-val">${fmt(wallLen(o))} mm</div></div>` : ''}</div>
-        <p class="note">${S.openings.some(q => q.wallId === o.id) ? '這面牆有門窗，不能彎成弧形。' : '拖曳牆中間的菱形點可以彎成弧形牆，拱高 0 就是直牆。'}</p></div>
+        <p class="note">拖曳牆中間的菱形點可以彎成弧形牆，拱高 0 就是直牆。門窗會沿著弧線保留在原來的位置。</p></div>
       <div class="sec"><button class="btn btn-primary" data-act="elev" style="width:100%">${'<svg class="i" viewBox="0 0 24 24"><path d="M3 20h18M5 20V7h14v13M9 20v-6h4v6"/></svg>'}查看這面牆的立面圖</button></div>
       ${[['a', 1], ['b', -1]].map(([sd, sg]) => { const f = finOf(o, sd), rm = sideRoom(o, sg); return `<div class="sec"><h3>${rm ? `朝${esc(rm.name)}的牆面` : '室外側牆面'}</h3><div class="swatches">${Object.entries(FIN).map(([k, v]) => `<button class="sw" data-fin="${sd}" data-k="${k}" aria-pressed="${f.k === k}">${swI(finSpec({ k, c: f.c }))}${esc(v.name)}</button>`).join('')}<button class="sw add" data-umat="fin" data-side="${sd}">${IC.plus}自訂</button></div><div class="swatches" style="margin-top:10px">${WALL_COLORS.map(([c, n]) => `<button class="sw dot" data-fin="${sd}" data-c="${c}" aria-pressed="${f.c === c}" title="${n}" aria-label="${n}"><i style="background:${c}"></i></button>`).join('')}</div></div>`; }).join('')}
       <div class="sec"><h3>此牆上的門窗</h3>${S.openings.filter(x => x.wallId === o.id).map(x => `<div class="kv"><span>${x.type === 'door' ? '門' : '窗'}</span><b>${x.w} 寬</b></div>`).join('') || '<p class="crumb" style="margin:0">尚未加入門窗。使用門或窗工具點擊這面牆即可加入。</p>'}</div>` + actions(false);
@@ -2593,7 +2627,7 @@ function applyField(el, live) {
     const Ln = Math.hypot(o.x2 - o.x1, o.y2 - o.y1) || 1, ux = (o.x2 - o.x1) / Ln, uy = (o.y2 - o.y1) / Ln, links = connected(o).filter(l => l.f === 2);
     o.x2 = Math.round(o.x1 + ux * v); o.y2 = Math.round(o.y1 + uy * v); links.forEach(l => { l.w['x' + l.e] = o.x2; l.w['y' + l.e] = o.y2; });
   } else if (['w', 'd', 'h', 't', 'z', 'sill', 'size', 'width'].includes(f)) o[f] = Math.max(f === 'z' || f === 'sill' ? 0 : 1, v);
-  else if (f === 'arc') { if (S.openings.some(q => q.wallId === o.id)) { flash('這面牆有門窗，不能彎成弧形'); return; } const Ch = Math.hypot(o.x2 - o.x1, o.y2 - o.y1); if (Math.abs(v) < 1) delete o.arc; else o.arc = clamp(v, -Ch / 2, Ch / 2); }
+  else if (f === 'arc') { const Ch = Math.hypot(o.x2 - o.x1, o.y2 - o.y1); if (Math.abs(v) < 1) delete o.arc; else o.arc = clamp(v, -Ch / 2, Ch / 2); }
   else if (['lm', 'beam', 'len', 'dim'].includes(f)) { o[f] = Math.max(f === 'dim' ? 0 : 1, f === 'beam' ? Math.min(v, 160) : v); if (f === 'dim') delete o.off; }
   else if (f === 'rot') o.rot = ((v % 360) + 360) % 360;
   else o[f] = v;
@@ -2779,13 +2813,14 @@ function build3d() {
   T.coveQ = [];
   const ceilM = new THREE.MeshStandardMaterial({ color: '#F4F3EF', roughness: .95, side: THREE.BackSide }), ceils = new THREE.Group(); ceils.name = 'ceilings'; if (main) T.ceils = ceils;
   const ceilH = Math.max(2400, ...S.walls.map(w => w.h)); if (main) T.ceilH = ceilH;
-  if (!main) { const bb = bounds(); const sl = new THREE.Mesh(new THREE.BoxGeometry(bb.w / 1000 + .3, .15, bb.h / 1000 + .3), mat('#C9C5BA')); sl.position.copy(P(bb.x + bb.w / 2, bb.y + bb.h / 2, -80)); root.add(shade(sl)); }
+  if (!main) { const bb = bounds(), toV = ([x, y]) => new THREE.Vector2((x - c.x) / 1000, -(y - c.y) / 1000), sh = new THREE.Shape([[bb.x - 150, bb.y - 150], [bb.x + bb.w + 150, bb.y - 150], [bb.x + bb.w + 150, bb.y + bb.h + 150], [bb.x - 150, bb.y + bb.h + 150]].map(toV)); stairWells().forEach(q => sh.holes.push(new THREE.Path(q.map(toV)))); const sl = new THREE.Mesh(new THREE.ExtrudeGeometry(sh, { depth: .15, bevelEnabled: false }), mat('#C9C5BA')); sl.rotation.x = -Math.PI / 2; sl.position.y = -.155; root.add(shade(sl)); }
   for (const rm of S.rooms) {
     let geo;
-    if (rm.pts) geo = new THREE.ShapeGeometry(new THREE.Shape(rm.pts.map(([x, y]) => new THREE.Vector2((x - c.x) / 1000, -(y - c.y) / 1000))));
+    const wells = stairWells().filter(q => q.some(([x, y]) => inRoom(rm, x, y))), toV = ([x, y]) => new THREE.Vector2((x - c.x) / 1000, -(y - c.y) / 1000);
+    if (rm.pts || wells.length) { const sh = new THREE.Shape(rpts(rm).map(toV)); wells.forEach(q => sh.holes.push(new THREE.Path(q.map(toV)))); geo = new THREE.ShapeGeometry(sh); }
     else { geo = new THREE.PlaneGeometry(rm.w / 1000, rm.h / 1000); const ps = geo.attributes.position, uv = geo.attributes.uv, ox = (rm.x + rm.w / 2 - c.x) / 1000, oy = -(rm.y + rm.h / 2 - c.y) / 1000; for (let i = 0; i < uv.count; i++) uv.setXY(i, ps.getX(i) + ox, ps.getY(i) + oy); }
     const f = new THREE.Mesh(geo, surf(FLOORS[rm.floor] || FLOORS.oak));
-    f.rotation.x = -Math.PI / 2; if (rm.pts) f.position.set(0, .002, 0); else f.position.copy(P(rm.x + rm.w / 2, rm.y + rm.h / 2, 2)); f.receiveShadow = fine; root.add(f);
+    f.rotation.x = -Math.PI / 2; if (rm.pts || wells.length) f.position.set(0, .002, 0); else f.position.copy(P(rm.x + rm.w / 2, rm.y + rm.h / 2, 2)); f.receiveShadow = fine; root.add(f);
     // ceilings face down only, so the bird's-eye view still looks in from above
     if (!T.cut) buildCeil(rm, geo, f, ceils, ceilM, P, fine);
   }
@@ -2797,7 +2832,7 @@ function build3d() {
     const Ln = Math.hypot(w.x2 - w.x1, w.y2 - w.y1); if (Ln < 1) continue;
     const ux = (w.x2 - w.x1) / Ln, uy = (w.y2 - w.y1) / Ln, rotY = -Math.atan2(uy, ux);
     const H = T.cut ? Math.min(w.h, 1200) : w.h;
-    const ops = w.piece ? [] : S.openings.filter(o => o.wallId === w.id).map(o => ({ o, g: opGeom(o) })).sort((a, b2) => a.g.pos - b2.g.pos);
+    const ops = w.piece ? (w.pops || []).map(o => ({ o, g: { pos: o.pos } })).sort((a, b2) => a.g.pos - b2.g.pos) : S.openings.filter(o => o.wallId === w.id).map(o => ({ o, g: opGeom(o) })).sort((a, b2) => a.g.pos - b2.g.pos);
     const segs = []; let cur = 0;
     const add = (a, bb, y0, y1, m = wallMats, dep = w.t) => { if (bb - a < 1 || y1 - y0 < 1) return; segs.push([a, bb, y0, y1, m, dep]); };
     for (const { o, g: gg } of ops) {
@@ -3263,7 +3298,7 @@ function sectionData(q) {
     const L2 = Math.hypot(w.x2 - w.x1, w.y2 - w.y1); if (L2 < 1) continue; const wx = (w.x2 - w.x1) / L2, wy = (w.y2 - w.y1) / L2, hx = -wy * w.t / 2, hy = wx * w.t / 2;
     const poly = [[w.x1 + hx, w.y1 + hy], [w.x2 + hx, w.y2 + hy], [w.x2 - hx, w.y2 - hy], [w.x1 - hx, w.y1 - hy]], iv = clipLine(P1, u, Ls, poly); if (!iv || iv[1] - iv[0] < 1) continue;
     const tm = (iv[0] + iv[1]) / 2, mx = P1[0] + u[0] * tm, my = P1[1] + u[1] * tm, along = (mx - w.x1) * wx + (my - w.y1) * wy;
-    const op = w.piece ? null : S.openings.find(o => { if (o.wallId !== w.id) return false; const g = opGeom(o); return g && Math.abs(along - g.pos) <= o.w / 2; });
+    const op = w.piece ? (w.pops || []).find(o => Math.abs(along - o.pos) <= o.w / 2) : S.openings.find(o => { if (o.wallId !== w.id) return false; const g = opGeom(o); return g && Math.abs(along - g.pos) <= o.w / 2; });
     cuts.push({ t0: iv[0], t1: iv[1], h: w.h, op });
   }
   const runs = []; let cur = null;
@@ -4893,7 +4928,7 @@ function elevPages(sh, paper, startInfo) {
   return withSheet(sh, () => {
     const list = [];
     for (const w of S.walls) { const side = bestSide(w), d = elevData(w, side); if (d && (d.items.length || d.ops.length > 1)) list.push({ w, side, n: d.items.length }); }
-    list.sort((p, q) => q.n - p.n); const pick = list.slice(0, 8), pages = [];
+    list.sort((p, q) => q.n - p.n); const pick = list.slice(0, 40), pages = [];
     for (let i = 0; i < pick.length; i += 2) {
       const pg = newPage(paper), info = { ...startInfo, title: `${sh.no} 立面圖`, no: `${sh.no.replace('A', 'E')}-${String(i / 2 + 1).padStart(2, '0')}` }, a = drawFrame(pg, info);
       const slotH = (a.ah - 4) / 2, scs = [];
